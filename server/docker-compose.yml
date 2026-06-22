@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: raai
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-raai}
+      POSTGRES_DB: raai
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raai"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # One-shot migration job: runs to completion before the app starts (§9.2),
+  # so migrations can't race across instances.
+  migrate:
+    build: { context: ., args: { VERSION: "${VERSION:-dev}" } }
+    command: ["/api", "migrate", "up"]
+    environment:
+      DB_CONNECTION_STRING: postgres://raai:${DB_PASSWORD:-raai}@db:5432/raai?sslmode=disable
+      JWT_KEY: ${JWT_KEY:-dev-only-change-me}
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    build: { context: ., args: { VERSION: "${VERSION:-dev}" } }
+    env_file: [.env]   # JWT_KEY, INSTAPAY_IPA, prices, etc. — never commit this
+    environment:
+      DB_CONNECTION_STRING: postgres://raai:${DB_PASSWORD:-raai}@db:5432/raai?sslmode=disable
+    ports: ["8080:8080"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["/api", "healthcheck"]   # tiny subcommand (distroless has no shell)
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  pgdata:

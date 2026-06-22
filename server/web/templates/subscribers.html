@@ -1,0 +1,25 @@
+{{define "title"}}Subscribers · Raai Admin{{end}}
+{{define "content"}}
+<h1>Subscribers</h1>
+<form method="get" action="/admin/subscribers" class="row">
+  <input name="phone" value="{{.Data.Phone}}" placeholder="Search by phone">
+  <button type="submit">Search</button>
+</form>
+<table>
+  <thead><tr><th>Phone</th><th>Role</th><th>Plan</th><th>Status</th><th>Period end</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Rows}}
+    <tr>
+      <td>{{.Phone}}</td>
+      <td>{{.Role}}</td>
+      <td>{{.Plan}}</td>
+      <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+      <td class="muted">{{.PeriodEnd}}</td>
+      <td><a href="/admin/users/{{.ID}}">manage</a></td>
+    </tr>
+  {{else}}
+    <tr><td colspan="6" class="muted">No users.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}

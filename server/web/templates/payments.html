@@ -1,0 +1,41 @@
+{{define "title"}}Payments · Raai Admin{{end}}
+{{define "content"}}
+<h1>Payments</h1>
+<div class="row">
+  <a class="btn ghost" href="/admin/payments?status=pending">Pending</a>
+  <a class="btn ghost" href="/admin/payments?status=confirmed">Confirmed</a>
+  <a class="btn ghost" href="/admin/payments?status=rejected">Rejected</a>
+  <a class="btn ghost" href="/admin/payments?status=all">All</a>
+</div>
+<table>
+  <thead><tr><th>User</th><th>Plan</th><th>Amount</th><th>InstaPay ref</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Rows}}
+    <tr>
+      <td><a href="/admin/users/{{.ID}}">{{.Phone}}</a></td>
+      <td>{{.Plan}}</td>
+      <td>{{.Amount}} EGP</td>
+      <td>
+        {{.Ref}}
+        {{if .Screenshot}} · <a href="{{.Screenshot}}" target="_blank" rel="noopener">proof</a>{{end}}
+      </td>
+      <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+      <td class="muted">{{.SubmittedAt}}</td>
+      <td>
+        {{if eq .Status "pending"}}
+        <form class="inline" method="post" action="/admin/payments/{{.ID}}/confirm">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <button type="submit">Confirm</button>
+        </form>
+        <a class="btn ghost" href="/admin/payments/{{.ID}}">Review</a>
+        {{else}}
+        <a href="/admin/payments/{{.ID}}">details</a>
+        {{end}}
+      </td>
+    </tr>
+  {{else}}
+    <tr><td colspan="7" class="muted">No payments.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}

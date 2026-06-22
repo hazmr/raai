@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS animal_notes;
+DROP TABLE IF EXISTS animals;
+DROP TABLE IF EXISTS users;

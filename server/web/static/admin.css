@@ -1,0 +1,38 @@
+:root { --bg:#0f1115; --card:#1a1d24; --line:#2a2f3a; --fg:#e6e8ec; --muted:#9aa3b2;
+  --accent:#3b82f6; --good:#22c55e; --bad:#ef4444; --warn:#f59e0b; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+header { display:flex; align-items:center; gap:20px; padding:14px 24px;
+  background:var(--card); border-bottom:1px solid var(--line); }
+header .brand { font-weight:700; font-size:17px; }
+header nav { display:flex; gap:16px; flex:1; }
+header form { margin-left:auto; }
+main { max-width:1000px; margin:24px auto; padding:0 24px; }
+h1 { font-size:22px; margin:0 0 18px; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:26px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+.card .n { font-size:28px; font-weight:700; }
+.card .l { color:var(--muted); font-size:13px; }
+table { width:100%; border-collapse:collapse; background:var(--card);
+  border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+th,td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--line); }
+th { color:var(--muted); font-weight:600; font-size:13px; }
+tr:last-child td { border-bottom:none; }
+.badge { padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+.badge.pending { background:rgba(245,158,11,.15); color:var(--warn); }
+.badge.confirmed,.badge.active { background:rgba(34,197,94,.15); color:var(--good); }
+.badge.rejected,.badge.expired,.badge.none { background:rgba(239,68,68,.15); color:var(--bad); }
+button,.btn { cursor:pointer; border:none; border-radius:8px; padding:8px 14px;
+  font-size:14px; font-weight:600; background:var(--accent); color:#fff; }
+button.ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
+button.danger { background:var(--bad); }
+input,select { background:var(--bg); border:1px solid var(--line); color:var(--fg);
+  border-radius:8px; padding:8px 10px; font-size:14px; }
+form.inline { display:inline; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+.login { max-width:340px; margin:80px auto; }
+.muted { color:var(--muted); }
+.err { color:var(--bad); margin:8px 0; }

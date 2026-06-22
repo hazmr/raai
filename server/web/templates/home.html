@@ -1,0 +1,11 @@
+{{define "title"}}Dashboard · Raai Admin{{end}}
+{{define "content"}}
+<h1>Overview</h1>
+<div class="cards">
+  <div class="card"><div class="n">{{.Data.Pending}}</div><div class="l">Pending payments</div></div>
+  <div class="card"><div class="n">{{.Data.Active}}</div><div class="l">Active subscribers</div></div>
+  <div class="card"><div class="n">{{.Data.Expiring}}</div><div class="l">Expiring ≤ 7 days</div></div>
+  <div class="card"><div class="n">{{.Data.Revenue}} <span class="muted" style="font-size:14px">EGP</span></div><div class="l">Revenue this month</div></div>
+</div>
+<p><a href="/admin/payments?status=pending">Review pending payments →</a></p>
+{{end}}

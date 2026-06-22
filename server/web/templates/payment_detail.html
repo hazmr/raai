@@ -1,0 +1,30 @@
+{{define "title"}}Payment #{{.Data.P.ID}} · Raai Admin{{end}}
+{{define "content"}}
+<p><a href="/admin/payments?status=pending">← Back to queue</a></p>
+<h1>Payment #{{.Data.P.ID}}</h1>
+<table>
+  <tr><th>Plan</th><td>{{.Data.P.Plan}}</td></tr>
+  <tr><th>Claimed amount</th><td>{{.Data.P.Amount}} EGP</td></tr>
+  <tr><th>InstaPay reference</th><td>{{.Data.P.Ref}}</td></tr>
+  <tr><th>Status</th><td><span class="badge {{.Data.P.Status}}">{{.Data.P.Status}}</span></td></tr>
+  <tr><th>Submitted</th><td>{{.Data.P.SubmittedAt}}</td></tr>
+  {{if .Data.P.Screenshot}}<tr><th>Proof</th><td><a href="{{.Data.P.Screenshot}}" target="_blank" rel="noopener">screenshot</a></td></tr>{{end}}
+  {{if .Data.Note}}<tr><th>Admin note</th><td>{{.Data.Note}}</td></tr>{{end}}
+</table>
+
+{{if eq .Data.P.Status "pending"}}
+<div class="row" style="margin-top:18px">
+  <form class="inline" method="post" action="/admin/payments/{{.Data.P.ID}}/confirm">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit">Confirm &amp; extend subscription</button>
+  </form>
+</div>
+<form method="post" action="/admin/payments/{{.Data.P.ID}}/reject" style="margin-top:14px">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <div class="row">
+    <input name="note" placeholder="Reason for rejection" style="flex:1">
+    <button class="danger" type="submit">Reject</button>
+  </div>
+</form>
+{{end}}
+{{end}}

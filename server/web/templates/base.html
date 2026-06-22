@@ -1,0 +1,26 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{block "title" .}}Raai Admin{{end}}</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+  <header>
+    <span class="brand">راعي · Admin</span>
+    <nav>
+      <a href="/admin">Dashboard</a>
+      <a href="/admin/payments?status=pending">Payments</a>
+      <a href="/admin/subscribers">Subscribers</a>
+    </nav>
+    <form method="post" action="/admin/logout">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button class="ghost" type="submit">Log out</button>
+    </form>
+  </header>
+  <main>
+    {{block "content" .}}{{end}}
+  </main>
+</body>
+</html>{{end}}

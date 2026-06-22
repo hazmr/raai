@@ -1,0 +1,43 @@
+{{define "title"}}{{.Data.Phone}} · Raai Admin{{end}}
+{{define "content"}}
+<p><a href="/admin/subscribers">← Back to subscribers</a></p>
+<h1>{{.Data.Phone}}</h1>
+<table>
+  <tr><th>Role</th><td>{{.Data.Role}}</td></tr>
+  <tr><th>Admin</th><td>{{if .Data.IsAdmin}}yes{{else}}no{{end}}</td></tr>
+  <tr><th>Plan</th><td>{{.Data.Plan}}</td></tr>
+  <tr><th>Status</th><td><span class="badge {{.Data.Status}}">{{.Data.Status}}</span></td></tr>
+  <tr><th>Period end</th><td>{{.Data.PeriodEnd}}</td></tr>
+</table>
+
+<h1 style="font-size:18px;margin-top:24px">Manual adjustment</h1>
+<form method="post" action="/admin/users/{{.Data.ID}}/grant" class="row">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <select name="plan">
+    <option value="monthly">+1 month (monthly)</option>
+    <option value="yearly">+1 year (yearly)</option>
+  </select>
+  <button type="submit">Grant / extend</button>
+</form>
+<form method="post" action="/admin/users/{{.Data.ID}}/revoke" class="row" style="margin-top:10px">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button class="danger" type="submit">Revoke access now</button>
+</form>
+
+<h1 style="font-size:18px;margin-top:24px">Recent payments</h1>
+<table>
+  <thead><tr><th>#</th><th>Plan</th><th>Amount</th><th>Ref</th><th>Status</th><th>Submitted</th></tr></thead>
+  <tbody>
+  {{range .Data.Payments}}
+    <tr>
+      <td><a href="/admin/payments/{{.ID}}">{{.ID}}</a></td>
+      <td>{{.Plan}}</td><td>{{.Amount}} EGP</td><td>{{.Ref}}</td>
+      <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+      <td class="muted">{{.SubmittedAt}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="6" class="muted">No payments.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}

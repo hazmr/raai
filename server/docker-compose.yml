@@ -16,7 +16,7 @@ services:
   # so migrations can't race across instances.
   migrate:
     build: { context: ., args: { VERSION: "${VERSION:-dev}" } }
-    command: ["/api", "migrate", "up"]
+    command: ["migrate", "up"]   # appended to the image ENTRYPOINT (/api)
     environment:
       DB_CONNECTION_STRING: postgres://raai:${DB_PASSWORD:-raai}@db:5432/raai?sslmode=disable
       JWT_KEY: ${JWT_KEY:-dev-only-change-me}
@@ -33,7 +33,7 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
     healthcheck:
-      test: ["/api", "healthcheck"]   # tiny subcommand (distroless has no shell)
+      test: ["CMD", "/api", "healthcheck"]   # tiny subcommand (distroless has no shell)
       interval: 15s
       timeout: 3s
       retries: 3

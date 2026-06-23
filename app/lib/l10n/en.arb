@@ -1,0 +1,53 @@
+{
+  "@@locale": "en",
+  "appTitle": "Raai",
+
+  "login": "Log in",
+  "register": "Create account",
+  "phoneNumber": "Phone number",
+  "password": "Password",
+  "roleFarmer": "Farmer",
+  "roleVet": "Vet",
+  "roleQuestion": "I am a",
+  "signIn": "Sign in",
+  "createAccount": "Create account",
+  "needAccount": "New here? Create an account",
+  "haveAccount": "Already have an account? Log in",
+
+  "homeGreeting": "Welcome",
+  "tileHerd": "Herd",
+  "tileScan": "Scan tag",
+  "tileNewVisit": "New visit",
+  "tileOpenVisits": "Open visits",
+  "tileSubscription": "Subscription",
+  "herdCount": "{count} head",
+  "@herdCount": { "placeholders": { "count": { "type": "int" } } },
+
+  "subscriptionActive": "Subscription active",
+  "subscriptionExpiring": "Expiring soon",
+  "subscriptionLapsed": "Subscription needed",
+  "renewsOn": "Renews {date}",
+  "@renewsOn": { "placeholders": { "date": { "type": "String" } } },
+
+  "logout": "Log out",
+  "retry": "Retry",
+  "cancel": "Cancel",
+  "save": "Save",
+  "search": "Search",
+  "loading": "Loading…",
+
+  "errOffline": "No connection — try again",
+  "errSessionExpired": "Your session ended — please log in again",
+  "errForbidden": "You don't have access to this",
+  "errNotFound": "Not found",
+  "errAnimalNotFound": "Animal not found",
+  "errConflict": "This already exists",
+  "errTagExists": "This tag is already registered",
+  "errReceiptUsed": "This receipt was already used",
+  "errValidation": "Please check the details",
+  "errRateLimited": "Too many tries — wait a moment",
+  "errGeneric": "Something went wrong — try later",
+
+  "fieldRequired": "Required",
+  "passwordTooShort": "At least 6 characters"
+}

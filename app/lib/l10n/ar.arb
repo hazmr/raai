@@ -1,0 +1,53 @@
+{
+  "@@locale": "ar",
+  "appTitle": "راعي",
+
+  "login": "تسجيل الدخول",
+  "register": "حساب جديد",
+  "phoneNumber": "رقم الهاتف",
+  "password": "كلمة المرور",
+  "roleFarmer": "مزارع",
+  "roleVet": "طبيب بيطري",
+  "roleQuestion": "أنا",
+  "signIn": "دخول",
+  "createAccount": "إنشاء حساب",
+  "needAccount": "مستخدم جديد؟ أنشئ حساباً",
+  "haveAccount": "لديك حساب؟ سجّل الدخول",
+
+  "homeGreeting": "أهلاً",
+  "tileHerd": "القطيع",
+  "tileScan": "مسح الرقم",
+  "tileNewVisit": "زيارة جديدة",
+  "tileOpenVisits": "الزيارات المفتوحة",
+  "tileSubscription": "الاشتراك",
+  "herdCount": "{count} رأس",
+  "@herdCount": { "placeholders": { "count": { "type": "int" } } },
+
+  "subscriptionActive": "الاشتراك فعّال",
+  "subscriptionExpiring": "ينتهي قريباً",
+  "subscriptionLapsed": "الاشتراك مطلوب",
+  "renewsOn": "يتجدد {date}",
+  "@renewsOn": { "placeholders": { "date": { "type": "String" } } },
+
+  "logout": "تسجيل الخروج",
+  "retry": "إعادة المحاولة",
+  "cancel": "إلغاء",
+  "save": "حفظ",
+  "search": "بحث",
+  "loading": "جارٍ التحميل…",
+
+  "errOffline": "لا يوجد اتصال — حاول مرة أخرى",
+  "errSessionExpired": "انتهت الجلسة — سجّل الدخول من جديد",
+  "errForbidden": "لا تملك صلاحية لهذا الإجراء",
+  "errNotFound": "غير موجود",
+  "errAnimalNotFound": "لم يتم العثور على هذا الحيوان",
+  "errConflict": "هذا العنصر موجود بالفعل",
+  "errTagExists": "هذا الرقم مسجّل بالفعل",
+  "errReceiptUsed": "هذا الإيصال مُستخدم من قبل",
+  "errValidation": "تحقق من البيانات",
+  "errRateLimited": "محاولات كثيرة — انتظر قليلاً",
+  "errGeneric": "حدث خطأ ما — حاول لاحقاً",
+
+  "fieldRequired": "مطلوب",
+  "passwordTooShort": "٦ أحرف على الأقل"
+}

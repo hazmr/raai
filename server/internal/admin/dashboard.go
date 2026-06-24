@@ -37,7 +37,7 @@ type Dashboard struct {
 
 func NewDashboard(svc *Service, q *sqlc.Queries, jwtKey string, secure bool) (*Dashboard, error) {
 	d := &Dashboard{svc: svc, q: q, key: []byte(jwtKey), secure: secure, templates: map[string]*template.Template{}}
-	pages := []string{"home", "payments", "payment_detail", "subscribers", "user_detail"}
+	pages := []string{"home", "payments", "payment_detail", "farms", "farm_detail"}
 	for _, p := range pages {
 		t, err := template.New("base").ParseFS(web.Templates, "templates/base.html", "templates/"+p+".html")
 		if err != nil {
@@ -66,10 +66,10 @@ func (d *Dashboard) Routes(r chi.Router) {
 		r.Get("/payments/{id}", d.paymentDetail)
 		r.Post("/payments/{id}/confirm", d.confirmPayment)
 		r.Post("/payments/{id}/reject", d.rejectPayment)
-		r.Get("/subscribers", d.subscribers)
-		r.Get("/users/{id}", d.userDetail)
-		r.Post("/users/{id}/grant", d.grant)
-		r.Post("/users/{id}/revoke", d.revoke)
+		r.Get("/farms", d.farms)
+		r.Get("/farms/{id}", d.farmDetail)
+		r.Post("/farms/{id}/grant", d.grant)
+		r.Post("/farms/{id}/revoke", d.revoke)
 		r.Post("/logout", d.logout)
 	})
 }
@@ -158,8 +158,6 @@ func (d *Dashboard) clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/admin", MaxAge: -1})
 }
 
-// ensureCSRF returns the per-browser CSRF token, minting+setting it if absent
-// (double-submit cookie pattern, §8.1).
 func (d *Dashboard) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
 	if c, err := r.Cookie(csrfCookie); err == nil && c.Value != "" {
 		return c.Value
@@ -200,7 +198,7 @@ func (d *Dashboard) render(w http.ResponseWriter, page string, csrf string, data
 	}
 }
 
-// --- handlers ---
+// --- auth handlers ---
 
 func (d *Dashboard) loginForm(w http.ResponseWriter, r *http.Request) {
 	csrf := d.ensureCSRF(w, r)
@@ -238,6 +236,8 @@ func (d *Dashboard) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }
 
+// --- home ---
+
 type homeView struct {
 	Pending, Active, Expiring int64
 	Revenue                   string
@@ -257,8 +257,11 @@ func (d *Dashboard) home(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- payments ---
+
 type paymentRow struct {
 	ID          int32
+	Farm        string
 	Phone       string
 	Plan        string
 	Amount      string
@@ -279,7 +282,7 @@ func (d *Dashboard) payments(w http.ResponseWriter, r *http.Request) {
 	if status != "" && status != "all" {
 		statusPtr = &status
 	}
-	rows, err := d.q.ListPaymentsDetailed(r.Context(), sqlc.ListPaymentsDetailedParams{Status: statusPtr, Lim: 200})
+	rows, err := d.svc.ListPaymentsDetailed(r.Context(), statusPtr, 200)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -287,8 +290,9 @@ func (d *Dashboard) payments(w http.ResponseWriter, r *http.Request) {
 	view := paymentsView{Status: status}
 	for _, p := range rows {
 		view.Rows = append(view.Rows, paymentRow{
-			ID: p.ID, Phone: p.PhoneNumber, Plan: p.Plan, Amount: p.AmountEgp, Ref: p.InstapayRef,
-			Status: p.Status, Screenshot: p.ScreenshotUrl, SubmittedAt: fmtTime(p.CreatedAt),
+			ID: p.ID, Farm: p.FarmName, Phone: deref(p.SubmittedBy), Plan: p.Plan,
+			Amount: p.AmountEgp, Ref: p.InstapayRef, Status: p.Status,
+			Screenshot: p.ScreenshotUrl, SubmittedAt: fmtTime(p.CreatedAt),
 		})
 	}
 	d.render(w, "payments", sessionFrom(r).csrf, view)
@@ -307,8 +311,8 @@ func (d *Dashboard) paymentDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := paymentRow{
-		ID: p.ID, Plan: p.Plan, Amount: p.AmountEgp, Ref: p.InstapayRef, Status: p.Status,
-		Screenshot: p.ScreenshotUrl, SubmittedAt: fmtTime(p.CreatedAt),
+		ID: p.ID, Farm: strconv.Itoa(int(p.FarmID)), Plan: p.Plan, Amount: p.AmountEgp,
+		Ref: p.InstapayRef, Status: p.Status, Screenshot: p.ScreenshotUrl, SubmittedAt: fmtTime(p.CreatedAt),
 	}
 	note := ""
 	if p.Note != nil {
@@ -343,64 +347,101 @@ func (d *Dashboard) rejectPayment(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/payments?status=pending", http.StatusSeeOther)
 }
 
-type subscriberRow struct {
+// --- farms ---
+
+type farmRow struct {
 	ID        int32
-	Phone     string
-	Role      string
+	Name      string
+	Members   int64
 	Plan      string
 	Status    string
 	PeriodEnd string
 }
 
-func (d *Dashboard) subscribers(w http.ResponseWriter, r *http.Request) {
-	phone := strings.TrimSpace(r.URL.Query().Get("phone"))
-	var phonePtr *string
-	if phone != "" {
-		phonePtr = &phone
+func (d *Dashboard) farms(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	var qPtr *string
+	if q != "" {
+		qPtr = &q
 	}
-	rows, err := d.svc.ListSubscribers(r.Context(), phonePtr, 200, 0)
+	rows, err := d.svc.ListFarms(r.Context(), qPtr, 200, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out := make([]subscriberRow, 0, len(rows))
-	for _, s := range rows {
-		out = append(out, subscriberRow{
-			ID: s.ID, Phone: s.PhoneNumber, Role: s.Role,
-			Plan: deref(s.Plan), Status: deriveSubStatus(s.Status, s.CurrentPeriodEnd),
-			PeriodEnd: fmtTime(s.CurrentPeriodEnd),
+	out := make([]farmRow, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, farmRow{
+			ID: f.ID, Name: f.Name, Members: f.MemberCount,
+			Plan: deref(f.Plan), Status: deriveSubStatus(f.Status, f.CurrentPeriodEnd),
+			PeriodEnd: fmtTime(f.CurrentPeriodEnd),
 		})
 	}
-	d.render(w, "subscribers", sessionFrom(r).csrf, map[string]any{"Rows": out, "Phone": phone})
+	d.render(w, "farms", sessionFrom(r).csrf, map[string]any{"Rows": out, "Q": q})
 }
 
-type userDetailView struct {
+type memberRow struct {
+	Phone    string
+	Role     string
+	JoinedAt string
+}
+
+type inviteRow struct {
+	ID      int32
+	Doctor  string
+	Status  string
+	Notes   int64
+	Created string
+	Ended   string
+}
+
+type farmDetailView struct {
 	ID        int32
-	Phone     string
-	Role      string
-	IsAdmin   bool
+	Name      string
 	Plan      string
 	Status    string
 	PeriodEnd string
+	Members   []memberRow
+	Invites   []inviteRow
 	Payments  []paymentRow
 }
 
-func (d *Dashboard) userDetail(w http.ResponseWriter, r *http.Request) {
+func (d *Dashboard) farmDetail(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 32)
-	u, err := d.svc.GetSubscriber(r.Context(), int32(id))
+	f, err := d.svc.GetFarm(r.Context(), int32(id))
 	if err != nil {
-		http.Error(w, "user not found", http.StatusNotFound)
+		http.Error(w, "farm not found", http.StatusNotFound)
 		return
 	}
-	pays, err := d.svc.ListUserPayments(r.Context(), int32(id))
+	members, err := d.svc.ListFarmMembers(r.Context(), int32(id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	view := userDetailView{
-		ID: u.ID, Phone: u.PhoneNumber, Role: u.Role, IsAdmin: u.IsAdmin,
-		Plan: deref(u.Plan), Status: deriveSubStatus(u.Status, u.CurrentPeriodEnd),
-		PeriodEnd: fmtTime(u.CurrentPeriodEnd),
+	invites, err := d.svc.ListFarmInvites(r.Context(), int32(id))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pays, err := d.svc.ListFarmPayments(r.Context(), int32(id))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	view := farmDetailView{
+		ID: f.ID, Name: f.Name,
+		Plan: deref(f.Plan), Status: deriveSubStatus(f.Status, f.CurrentPeriodEnd),
+		PeriodEnd: fmtTime(f.CurrentPeriodEnd),
+	}
+	for _, m := range members {
+		view.Members = append(view.Members, memberRow{Phone: m.PhoneNumber, Role: m.Role, JoinedAt: fmtTime(m.CreatedAt)})
+	}
+	for _, i := range invites {
+		view.Invites = append(view.Invites, inviteRow{
+			ID: i.ID, Doctor: i.DoctorLabel, Status: i.Status, Notes: i.NoteCount,
+			Created: fmtTime(i.CreatedAt), Ended: fmtTime(i.EndedAt),
+		})
 	}
 	for _, p := range pays {
 		view.Payments = append(view.Payments, paymentRow{
@@ -408,7 +449,7 @@ func (d *Dashboard) userDetail(w http.ResponseWriter, r *http.Request) {
 			Status: p.Status, SubmittedAt: fmtTime(p.CreatedAt),
 		})
 	}
-	d.render(w, "user_detail", sessionFrom(r).csrf, view)
+	d.render(w, "farm_detail", sessionFrom(r).csrf, view)
 }
 
 func (d *Dashboard) grant(w http.ResponseWriter, r *http.Request) {
@@ -421,7 +462,7 @@ func (d *Dashboard) grant(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/admin/users/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/farms/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 func (d *Dashboard) revoke(w http.ResponseWriter, r *http.Request) {
@@ -434,7 +475,7 @@ func (d *Dashboard) revoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/admin/users/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/farms/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 // --- helpers ---

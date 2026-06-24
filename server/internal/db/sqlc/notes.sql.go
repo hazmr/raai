@@ -11,55 +11,89 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countNotesByInvite = `-- name: CountNotesByInvite :one
+SELECT count(*)::bigint AS notes FROM animal_notes WHERE author_invite_id = $1
+`
+
+func (q *Queries) CountNotesByInvite(ctx context.Context, authorInviteID *int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countNotesByInvite, authorInviteID)
+	var notes int64
+	err := row.Scan(&notes)
+	return notes, err
+}
+
 const createNote = `-- name: CreateNote :one
-INSERT INTO animal_notes (animal_id, notes, author_id, author_role, visit_id)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, animal_id, notes, author_id, author_role, created_at, updated_at, visit_id
+INSERT INTO animal_notes (animal_id, notes, author_kind, author_user_id, author_invite_id, author_label)
+VALUES ($1, $2, $3, $4,
+        $5, $6)
+RETURNING id, animal_id, notes, created_at, updated_at, author_kind, author_user_id, author_invite_id, author_label
 `
 
 type CreateNoteParams struct {
-	AnimalID   int32
-	Notes      string
-	AuthorID   int32
-	AuthorRole string
-	VisitID    *int32
+	AnimalID       int32
+	Notes          string
+	AuthorKind     string
+	AuthorUserID   *int32
+	AuthorInviteID *int32
+	AuthorLabel    string
 }
 
 func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (AnimalNote, error) {
 	row := q.db.QueryRow(ctx, createNote,
 		arg.AnimalID,
 		arg.Notes,
-		arg.AuthorID,
-		arg.AuthorRole,
-		arg.VisitID,
+		arg.AuthorKind,
+		arg.AuthorUserID,
+		arg.AuthorInviteID,
+		arg.AuthorLabel,
 	)
 	var i AnimalNote
 	err := row.Scan(
 		&i.ID,
 		&i.AnimalID,
 		&i.Notes,
-		&i.AuthorID,
-		&i.AuthorRole,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.VisitID,
+		&i.AuthorKind,
+		&i.AuthorUserID,
+		&i.AuthorInviteID,
+		&i.AuthorLabel,
 	)
 	return i, err
 }
 
-const deleteNote = `-- name: DeleteNote :execrows
+const deleteNoteByInvite = `-- name: DeleteNoteByInvite :execrows
 DELETE FROM animal_notes
-WHERE id = $1 AND animal_id = $2 AND author_id = $3
+WHERE id = $1 AND animal_id = $2 AND author_invite_id = $3
 `
 
-type DeleteNoteParams struct {
-	ID       int32
-	AnimalID int32
-	AuthorID int32
+type DeleteNoteByInviteParams struct {
+	ID             int32
+	AnimalID       int32
+	AuthorInviteID *int32
 }
 
-func (q *Queries) DeleteNote(ctx context.Context, arg DeleteNoteParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteNote, arg.ID, arg.AnimalID, arg.AuthorID)
+func (q *Queries) DeleteNoteByInvite(ctx context.Context, arg DeleteNoteByInviteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNoteByInvite, arg.ID, arg.AnimalID, arg.AuthorInviteID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteNoteByUser = `-- name: DeleteNoteByUser :execrows
+DELETE FROM animal_notes
+WHERE id = $1 AND animal_id = $2 AND author_user_id = $3
+`
+
+type DeleteNoteByUserParams struct {
+	ID           int32
+	AnimalID     int32
+	AuthorUserID *int32
+}
+
+func (q *Queries) DeleteNoteByUser(ctx context.Context, arg DeleteNoteByUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNoteByUser, arg.ID, arg.AnimalID, arg.AuthorUserID)
 	if err != nil {
 		return 0, err
 	}
@@ -67,37 +101,38 @@ func (q *Queries) DeleteNote(ctx context.Context, arg DeleteNoteParams) (int64, 
 }
 
 const getNote = `-- name: GetNote :one
-SELECT n.id, n.animal_id, n.notes, n.author_id, n.author_role, n.created_at, n.updated_at, n.visit_id FROM animal_notes n
+SELECT n.id, n.animal_id, n.notes, n.created_at, n.updated_at, n.author_kind, n.author_user_id, n.author_invite_id, n.author_label FROM animal_notes n
 JOIN animals a ON a.id = n.animal_id
-WHERE n.id = $1 AND n.animal_id = $2 AND a.user_id = $3
+WHERE n.id = $1 AND n.animal_id = $2 AND a.farm_id = $3
 `
 
 type GetNoteParams struct {
 	ID       int32
 	AnimalID int32
-	OwnerID  int32
+	FarmID   int32
 }
 
 func (q *Queries) GetNote(ctx context.Context, arg GetNoteParams) (AnimalNote, error) {
-	row := q.db.QueryRow(ctx, getNote, arg.ID, arg.AnimalID, arg.OwnerID)
+	row := q.db.QueryRow(ctx, getNote, arg.ID, arg.AnimalID, arg.FarmID)
 	var i AnimalNote
 	err := row.Scan(
 		&i.ID,
 		&i.AnimalID,
 		&i.Notes,
-		&i.AuthorID,
-		&i.AuthorRole,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.VisitID,
+		&i.AuthorKind,
+		&i.AuthorUserID,
+		&i.AuthorInviteID,
+		&i.AuthorLabel,
 	)
 	return i, err
 }
 
 const listNotes = `-- name: ListNotes :many
-SELECT n.id, n.animal_id, n.notes, n.author_id, n.author_role, n.created_at, n.updated_at, n.visit_id FROM animal_notes n
+SELECT n.id, n.animal_id, n.notes, n.created_at, n.updated_at, n.author_kind, n.author_user_id, n.author_invite_id, n.author_label FROM animal_notes n
 JOIN animals a ON a.id = n.animal_id
-WHERE n.animal_id = $1 AND a.user_id = $2
+WHERE n.animal_id = $1 AND a.farm_id = $2
   AND ($3::timestamptz IS NULL
        OR (n.created_at, n.id) < ($3::timestamptz, $4::int))
 ORDER BY n.created_at DESC, n.id DESC
@@ -106,7 +141,7 @@ LIMIT $5::int
 
 type ListNotesParams struct {
 	AnimalID   int32
-	OwnerID    int32
+	FarmID     int32
 	CursorTime pgtype.Timestamptz
 	CursorID   int32
 	Lim        int32
@@ -115,7 +150,7 @@ type ListNotesParams struct {
 func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]AnimalNote, error) {
 	rows, err := q.db.Query(ctx, listNotes,
 		arg.AnimalID,
-		arg.OwnerID,
+		arg.FarmID,
 		arg.CursorTime,
 		arg.CursorID,
 		arg.Lim,
@@ -131,11 +166,12 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]AnimalN
 			&i.ID,
 			&i.AnimalID,
 			&i.Notes,
-			&i.AuthorID,
-			&i.AuthorRole,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.VisitID,
+			&i.AuthorKind,
+			&i.AuthorUserID,
+			&i.AuthorInviteID,
+			&i.AuthorLabel,
 		); err != nil {
 			return nil, err
 		}
@@ -147,37 +183,74 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]AnimalN
 	return items, nil
 }
 
-const updateNote = `-- name: UpdateNote :one
+const updateNoteByInvite = `-- name: UpdateNoteByInvite :one
 UPDATE animal_notes
 SET notes = $1, updated_at = now()
-WHERE id = $2 AND animal_id = $3 AND author_id = $4
-RETURNING id, animal_id, notes, author_id, author_role, created_at, updated_at, visit_id
+WHERE id = $2 AND animal_id = $3 AND author_invite_id = $4
+RETURNING id, animal_id, notes, created_at, updated_at, author_kind, author_user_id, author_invite_id, author_label
 `
 
-type UpdateNoteParams struct {
-	Notes    string
-	ID       int32
-	AnimalID int32
-	AuthorID int32
+type UpdateNoteByInviteParams struct {
+	Notes          string
+	ID             int32
+	AnimalID       int32
+	AuthorInviteID *int32
 }
 
-func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (AnimalNote, error) {
-	row := q.db.QueryRow(ctx, updateNote,
+func (q *Queries) UpdateNoteByInvite(ctx context.Context, arg UpdateNoteByInviteParams) (AnimalNote, error) {
+	row := q.db.QueryRow(ctx, updateNoteByInvite,
 		arg.Notes,
 		arg.ID,
 		arg.AnimalID,
-		arg.AuthorID,
+		arg.AuthorInviteID,
 	)
 	var i AnimalNote
 	err := row.Scan(
 		&i.ID,
 		&i.AnimalID,
 		&i.Notes,
-		&i.AuthorID,
-		&i.AuthorRole,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.VisitID,
+		&i.AuthorKind,
+		&i.AuthorUserID,
+		&i.AuthorInviteID,
+		&i.AuthorLabel,
+	)
+	return i, err
+}
+
+const updateNoteByUser = `-- name: UpdateNoteByUser :one
+UPDATE animal_notes
+SET notes = $1, updated_at = now()
+WHERE id = $2 AND animal_id = $3 AND author_user_id = $4
+RETURNING id, animal_id, notes, created_at, updated_at, author_kind, author_user_id, author_invite_id, author_label
+`
+
+type UpdateNoteByUserParams struct {
+	Notes        string
+	ID           int32
+	AnimalID     int32
+	AuthorUserID *int32
+}
+
+func (q *Queries) UpdateNoteByUser(ctx context.Context, arg UpdateNoteByUserParams) (AnimalNote, error) {
+	row := q.db.QueryRow(ctx, updateNoteByUser,
+		arg.Notes,
+		arg.ID,
+		arg.AnimalID,
+		arg.AuthorUserID,
+	)
+	var i AnimalNote
+	err := row.Scan(
+		&i.ID,
+		&i.AnimalID,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AuthorKind,
+		&i.AuthorUserID,
+		&i.AuthorInviteID,
+		&i.AuthorLabel,
 	)
 	return i, err
 }

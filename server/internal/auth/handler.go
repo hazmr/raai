@@ -20,8 +20,7 @@ func NewHandler(svc *Service, q *sqlc.Queries) *Handler {
 	return &Handler{svc: svc, q: q}
 }
 
-// Routes mounts /auth/* (all public except logout, which needs auth applied by
-// the caller's router composition).
+// Routes mounts /auth/* (public except logout, applied by the caller's composition).
 func (h *Handler) Routes(r chi.Router) {
 	r.Post("/register", h.register)
 	r.Post("/login", h.login)
@@ -31,7 +30,7 @@ func (h *Handler) Routes(r chi.Router) {
 type credentials struct {
 	PhoneNumber string `json:"phoneNumber"`
 	Password    string `json:"password"`
-	Role        string `json:"role"` // optional on register; "" → farmer
+	FarmName    string `json:"farmName"`
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
@@ -44,15 +43,13 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	role := RoleFarmer
-	if in.Role == RoleVet {
-		role = RoleVet
-	} else if in.Role != "" && in.Role != RoleFarmer {
-		httpx.WriteError(w, r, httpx.ErrValidation("invalid role", map[string]string{"role": "must be 'farmer' or 'vet'"}))
-		return
+	farmName := strings.TrimSpace(in.FarmName)
+	if farmName == "" {
+		farmName = "مزرعة " + normalizePhone(in.PhoneNumber)
 	}
-
-	_, tokens, err := h.svc.Register(r.Context(), normalizePhone(in.PhoneNumber), in.Password, role)
+	// Registration always creates a farm with the user as its admin. Doctors never
+	// register — they redeem a QR invite (see the invites handler).
+	_, _, tokens, err := h.svc.Register(r.Context(), normalizePhone(in.PhoneNumber), in.Password, farmName)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
@@ -103,28 +100,41 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
-// userDTO is the §6.3 User shape (role added — additive within v1).
-type userDTO struct {
-	ID          int32     `json:"id"`
-	PhoneNumber string    `json:"phoneNumber"`
-	Role        string    `json:"role"`
-	IsAdmin     bool      `json:"isAdmin"`
-	CreatedAt   time.Time `json:"createdAt"`
+// farmDTO and userDTO make up the §6.3 current-user payload.
+type farmDTO struct {
+	ID   int32  `json:"id"`
+	Name string `json:"name"`
 }
 
-// Me returns the current user (§6.3); requires the auth middleware.
+type meDTO struct {
+	ID          int32     `json:"id"`
+	PhoneNumber string    `json:"phoneNumber"`
+	IsAdmin     bool      `json:"isAdmin"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Farm        farmDTO   `json:"farm"`
+	FarmRole    string    `json:"farmRole"` // admin | farmer
+}
+
+// Me returns the current user with their farm context (§6.3).
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	user, err := h.q.GetUserByID(r.Context(), MustUserID(r.Context()))
+	id := MustIdentity(r.Context())
+	user, err := h.q.GetUserByID(r.Context(), id.UserID)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, userDTO{
+	farm, err := h.q.GetFarm(r.Context(), id.FarmID)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, meDTO{
 		ID:          user.ID,
 		PhoneNumber: user.PhoneNumber,
-		Role:        user.Role,
 		IsAdmin:     user.IsAdmin,
 		CreatedAt:   httpx.TimeOf(user.CreatedAt),
+		Farm:        farmDTO{ID: farm.ID, Name: farm.Name},
+		FarmRole:    id.FarmRole,
 	})
 }
 

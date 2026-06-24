@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"raai/internal/db"
 	"raai/internal/db/sqlc"
 	"raai/internal/httpx"
@@ -22,39 +23,54 @@ type Tokens struct {
 
 // Service implements the auth flows over the sqlc queries.
 type Service struct {
+	pool       *pgxpool.Pool
 	q          *sqlc.Queries
 	tokens     *TokenManager
 	refreshTTL time.Duration
 }
 
-func NewService(q *sqlc.Queries, tokens *TokenManager, refreshTTL time.Duration) *Service {
-	return &Service{q: q, tokens: tokens, refreshTTL: refreshTTL}
+func NewService(pool *pgxpool.Pool, q *sqlc.Queries, tokens *TokenManager, refreshTTL time.Duration) *Service {
+	return &Service{pool: pool, q: q, tokens: tokens, refreshTTL: refreshTTL}
 }
 
-// Register creates a user with a bcrypt-hashed password and issues tokens. The
-// phone uniqueness conflict maps to 409 (§6.2).
-func (s *Service) Register(ctx context.Context, phone, password, role string) (sqlc.User, *Tokens, error) {
+// Register creates a user, a new farm, and an admin membership in one transaction,
+// then issues tokens. The registering user becomes the farm admin.
+func (s *Service) Register(ctx context.Context, phone, password, farmName string) (sqlc.User, sqlc.Farm, *Tokens, error) {
 	hash, err := HashPassword(password)
 	if err != nil {
-		return sqlc.User{}, nil, err
+		return sqlc.User{}, sqlc.Farm{}, nil, err
 	}
-	user, err := s.q.CreateUser(ctx, sqlc.CreateUserParams{
-		PhoneNumber: phone,
-		Password:    hash,
-		Role:        role,
-	})
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return sqlc.User{}, sqlc.Farm{}, nil, err
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.q.WithTx(tx)
+
+	user, err := qtx.CreateUser(ctx, sqlc.CreateUserParams{PhoneNumber: phone, Password: hash})
 	if err != nil {
 		if db.IsUniqueViolation(err) {
-			return sqlc.User{}, nil, httpx.ErrConflict("phone number is already registered")
+			return sqlc.User{}, sqlc.Farm{}, nil, httpx.ErrConflict("phone number is already registered")
 		}
-		return sqlc.User{}, nil, err
+		return sqlc.User{}, sqlc.Farm{}, nil, err
 	}
-	tok, err := s.issueAndStore(ctx, user)
-	return user, tok, err
+	farm, err := qtx.CreateFarm(ctx, farmName)
+	if err != nil {
+		return sqlc.User{}, sqlc.Farm{}, nil, err
+	}
+	if _, err := qtx.AddMember(ctx, sqlc.AddMemberParams{FarmID: farm.ID, UserID: user.ID, Role: RoleAdmin}); err != nil {
+		return sqlc.User{}, sqlc.Farm{}, nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return sqlc.User{}, sqlc.Farm{}, nil, err
+	}
+
+	tok, err := s.issueAndStore(ctx, user, farm.ID, RoleAdmin)
+	return user, farm, tok, err
 }
 
-// Login verifies the password and issues fresh tokens. Any failure is a flat 401
-// so the API never reveals whether the phone exists.
+// Login verifies the password and issues fresh tokens scoped to the user's farm.
 func (s *Service) Login(ctx context.Context, phone, password string) (*Tokens, error) {
 	user, err := s.q.GetUserByPhone(ctx, phone)
 	if err != nil {
@@ -66,7 +82,11 @@ func (s *Service) Login(ctx context.Context, phone, password string) (*Tokens, e
 	if !CheckPassword(user.Password, password) {
 		return nil, httpx.ErrUnauthorized("invalid phone number or password")
 	}
-	return s.issueAndStore(ctx, user)
+	mem, err := s.q.GetMembershipByUser(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.issueAndStore(ctx, user, mem.FarmID, mem.Role)
 }
 
 // Refresh rotates the stored refresh token and re-issues both tokens (§5).
@@ -78,7 +98,11 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*Tokens, er
 		}
 		return nil, err
 	}
-	return s.issueAndStore(ctx, user)
+	mem, err := s.q.GetMembershipByUser(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.issueAndStore(ctx, user, mem.FarmID, mem.Role)
 }
 
 // Logout clears the stored refresh token.
@@ -86,9 +110,10 @@ func (s *Service) Logout(ctx context.Context, uid int32) error {
 	return s.q.ClearRefreshToken(ctx, uid)
 }
 
-// issueAndStore mints an access token, rotates the refresh token, and persists it.
-func (s *Service) issueAndStore(ctx context.Context, user sqlc.User) (*Tokens, error) {
-	access, exp, err := s.tokens.Issue(user.ID, user.PhoneNumber)
+// issueAndStore mints a farm-scoped access token, rotates the refresh token, and
+// persists it.
+func (s *Service) issueAndStore(ctx context.Context, user sqlc.User, farmID int32, frole string) (*Tokens, error) {
+	access, exp, err := s.tokens.IssueUser(user.ID, user.PhoneNumber, farmID, frole)
 	if err != nil {
 		return nil, err
 	}

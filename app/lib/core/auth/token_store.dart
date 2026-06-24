@@ -1,7 +1,9 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Tokens kept off plain prefs (§5.1). Access token is attached to every request;
-/// refresh token is used to rotate when the access token expires.
+/// Tokens kept off plain prefs (§5.1). Two principal kinds:
+///   - user  : access + refresh tokens (rotated via /auth/refresh).
+///   - doctor: access token + the invite secret (re-redeemed via /doctor/redeem
+///             when the access token expires; an ended invite makes that fail).
 class TokenStore {
   TokenStore([FlutterSecureStorage? storage])
       : _storage = storage ?? const FlutterSecureStorage();
@@ -10,28 +12,59 @@ class TokenStore {
 
   static const _kAccess = 'access_token';
   static const _kRefresh = 'refresh_token';
-  static const _kRole = 'role';
+  static const _kKind = 'kind'; // user | doctor
+  static const _kFarmRole = 'farm_role'; // admin | farmer | doctor
+  static const _kFarmName = 'farm_name';
+  static const _kInviteToken = 'invite_token';
+  static const _kDoctorLabel = 'doctor_label';
 
   Future<String?> readAccess() => _storage.read(key: _kAccess);
   Future<String?> readRefresh() => _storage.read(key: _kRefresh);
-  Future<String?> readRole() => _storage.read(key: _kRole);
+  Future<String?> readKind() => _storage.read(key: _kKind);
+  Future<String?> readFarmRole() => _storage.read(key: _kFarmRole);
+  Future<String?> readFarmName() => _storage.read(key: _kFarmName);
+  Future<String?> readInviteToken() => _storage.read(key: _kInviteToken);
+  Future<String?> readDoctorLabel() => _storage.read(key: _kDoctorLabel);
 
-  Future<void> save({
+  Future<void> saveUser({
     required String access,
     required String refresh,
-    String? role,
+    String? farmRole,
+    String? farmName,
   }) async {
     await _storage.write(key: _kAccess, value: access);
     await _storage.write(key: _kRefresh, value: refresh);
-    if (role != null) await _storage.write(key: _kRole, value: role);
+    await _storage.write(key: _kKind, value: 'user');
+    if (farmRole != null) await _storage.write(key: _kFarmRole, value: farmRole);
+    if (farmName != null) await _storage.write(key: _kFarmName, value: farmName);
   }
 
-  Future<void> saveRole(String role) => _storage.write(key: _kRole, value: role);
+  Future<void> saveDoctor({
+    required String access,
+    required String inviteToken,
+    required String farmName,
+    required String doctorLabel,
+  }) async {
+    await _storage.write(key: _kAccess, value: access);
+    await _storage.write(key: _kInviteToken, value: inviteToken);
+    await _storage.write(key: _kKind, value: 'doctor');
+    await _storage.write(key: _kFarmRole, value: 'doctor');
+    await _storage.write(key: _kFarmName, value: farmName);
+    await _storage.write(key: _kDoctorLabel, value: doctorLabel);
+  }
+
+  /// Updates just the access token after a refresh / re-redeem.
+  Future<void> saveAccess(String access) => _storage.write(key: _kAccess, value: access);
+
+  Future<void> saveProfile({String? farmRole, String? farmName}) async {
+    if (farmRole != null) await _storage.write(key: _kFarmRole, value: farmRole);
+    if (farmName != null) await _storage.write(key: _kFarmName, value: farmName);
+  }
 
   Future<void> clear() async {
-    await _storage.delete(key: _kAccess);
-    await _storage.delete(key: _kRefresh);
-    await _storage.delete(key: _kRole);
+    for (final k in [_kAccess, _kRefresh, _kKind, _kFarmRole, _kFarmName, _kInviteToken, _kDoctorLabel]) {
+      await _storage.delete(key: k);
+    }
   }
 
   Future<bool> get hasSession async => (await readAccess()) != null;

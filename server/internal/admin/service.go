@@ -1,6 +1,7 @@
 // Package admin holds the single service layer behind both the JSON admin
 // endpoints (§7.3) and the server-rendered dashboard (§8) — two transports, one
-// logic. Every mutating action runs in one transaction and writes admin_audit.
+// logic. Subscriptions are per-farm. Every mutating action runs in one
+// transaction and writes admin_audit.
 package admin
 
 import (
@@ -25,7 +26,8 @@ func NewService(pool *pgxpool.Pool, q *sqlc.Queries) *Service {
 }
 
 // ConfirmPayment performs the §7.4.5 one-transaction confirm: mark the payment
-// confirmed, extend the subscription from max(now, current_period_end), and audit.
+// confirmed, extend the FARM's subscription from max(now, current_period_end),
+// and audit.
 func (s *Service) ConfirmPayment(ctx context.Context, adminID, paymentID int32) (billing.PaymentDTO, error) {
 	var dto billing.PaymentDTO
 	err := s.inTx(ctx, func(q *sqlc.Queries) error {
@@ -45,7 +47,7 @@ func (s *Service) ConfirmPayment(ctx context.Context, adminID, paymentID int32) 
 			return httpx.ErrValidation("payment has an invalid plan", nil)
 		}
 		if _, err := q.ExtendSubscription(ctx, sqlc.ExtendSubscriptionParams{
-			UserID:    p.UserID,
+			FarmID:    p.FarmID,
 			Plan:      p.Plan,
 			AddMonths: months,
 		}); err != nil {
@@ -54,9 +56,9 @@ func (s *Service) ConfirmPayment(ctx context.Context, adminID, paymentID int32) 
 		if err := q.CreateAudit(ctx, sqlc.CreateAuditParams{
 			AdminID:    adminID,
 			Action:     "confirm_payment",
-			TargetUser: &p.UserID,
+			TargetUser: p.CreatedBy,
 			PaymentID:  &p.ID,
-			Detail:     strPtr(fmt.Sprintf("+%d month(s), plan=%s", months, p.Plan)),
+			Detail:     strPtr(fmt.Sprintf("farm=%d +%d month(s), plan=%s", p.FarmID, months, p.Plan)),
 		}); err != nil {
 			return err
 		}
@@ -89,7 +91,7 @@ func (s *Service) RejectPayment(ctx context.Context, adminID, paymentID int32, n
 		if err := q.CreateAudit(ctx, sqlc.CreateAuditParams{
 			AdminID:    adminID,
 			Action:     "reject_payment",
-			TargetUser: &p.UserID,
+			TargetUser: p.CreatedBy,
 			PaymentID:  &p.ID,
 			Detail:     notePtr,
 		}); err != nil {
@@ -101,38 +103,36 @@ func (s *Service) RejectPayment(ctx context.Context, adminID, paymentID int32, n
 	return dto, err
 }
 
-// Grant manually extends a user's subscription (off-band cash, comps) (§8.3).
-func (s *Service) Grant(ctx context.Context, adminID, targetUser int32, plan string) error {
+// Grant manually extends a farm's subscription (off-band cash, comps) (§8.3).
+func (s *Service) Grant(ctx context.Context, adminID, targetFarm int32, plan string) error {
 	months, ok := billing.PlanMonths(plan)
 	if !ok {
 		return httpx.ErrValidation("invalid plan", map[string]string{"plan": "must be 'monthly' or 'yearly'"})
 	}
 	return s.inTx(ctx, func(q *sqlc.Queries) error {
 		if _, err := q.ExtendSubscription(ctx, sqlc.ExtendSubscriptionParams{
-			UserID: targetUser, Plan: plan, AddMonths: months,
+			FarmID: targetFarm, Plan: plan, AddMonths: months,
 		}); err != nil {
 			return err
 		}
 		return q.CreateAudit(ctx, sqlc.CreateAuditParams{
-			AdminID:    adminID,
-			Action:     "grant",
-			TargetUser: &targetUser,
-			Detail:     strPtr(fmt.Sprintf("+%d month(s) manual grant", months)),
+			AdminID: adminID,
+			Action:  "grant",
+			Detail:  strPtr(fmt.Sprintf("farm=%d +%d month(s) manual grant", targetFarm, months)),
 		})
 	})
 }
 
-// Revoke immediately ends a user's access (refund/abuse) (§8.3).
-func (s *Service) Revoke(ctx context.Context, adminID, targetUser int32) error {
+// Revoke immediately ends a farm's access (refund/abuse) (§8.3).
+func (s *Service) Revoke(ctx context.Context, adminID, targetFarm int32) error {
 	return s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := q.RevokeSubscription(ctx, targetUser); err != nil {
+		if _, err := q.RevokeSubscription(ctx, targetFarm); err != nil {
 			return err
 		}
 		return q.CreateAudit(ctx, sqlc.CreateAuditParams{
-			AdminID:    adminID,
-			Action:     "revoke",
-			TargetUser: &targetUser,
-			Detail:     strPtr("manual revoke"),
+			AdminID: adminID,
+			Action:  "revoke",
+			Detail:  strPtr(fmt.Sprintf("farm=%d manual revoke", targetFarm)),
 		})
 	})
 }
@@ -165,24 +165,36 @@ func (s *Service) ListPayments(ctx context.Context, status *string, page httpx.P
 	return out, nil
 }
 
+func (s *Service) ListPaymentsDetailed(ctx context.Context, status *string, limit int32) ([]sqlc.ListPaymentsDetailedRow, error) {
+	return s.q.ListPaymentsDetailed(ctx, sqlc.ListPaymentsDetailedParams{Status: status, Lim: limit})
+}
+
 func (s *Service) GetPayment(ctx context.Context, id int32) (sqlc.Payment, error) {
 	return s.q.GetPayment(ctx, id)
 }
 
-func (s *Service) ListSubscribers(ctx context.Context, phone *string, limit, offset int32) ([]sqlc.ListSubscribersRow, error) {
-	return s.q.ListSubscribers(ctx, sqlc.ListSubscribersParams{Phone: phone, Lim: limit, Off: offset})
+func (s *Service) ListFarms(ctx context.Context, q *string, limit, offset int32) ([]sqlc.ListFarmsRow, error) {
+	return s.q.ListFarms(ctx, sqlc.ListFarmsParams{Q: q, Lim: limit, Off: offset})
 }
 
-func (s *Service) GetSubscriber(ctx context.Context, id int32) (sqlc.GetSubscriberDetailRow, error) {
-	row, err := s.q.GetSubscriberDetail(ctx, id)
+func (s *Service) GetFarm(ctx context.Context, id int32) (sqlc.GetFarmDetailRow, error) {
+	row, err := s.q.GetFarmDetail(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return row, httpx.ErrNotFound("user not found")
+		return row, httpx.ErrNotFound("farm not found")
 	}
 	return row, err
 }
 
-func (s *Service) ListUserPayments(ctx context.Context, uid int32) ([]sqlc.Payment, error) {
-	return s.q.ListPaymentsByUser(ctx, sqlc.ListPaymentsByUserParams{UserID: uid, Lim: 20})
+func (s *Service) ListFarmMembers(ctx context.Context, farmID int32) ([]sqlc.ListMembersRow, error) {
+	return s.q.ListMembers(ctx, farmID)
+}
+
+func (s *Service) ListFarmInvites(ctx context.Context, farmID int32) ([]sqlc.ListInvitesByFarmRow, error) {
+	return s.q.ListInvitesByFarm(ctx, farmID)
+}
+
+func (s *Service) ListFarmPayments(ctx context.Context, farmID int32) ([]sqlc.Payment, error) {
+	return s.q.ListPaymentsByFarm(ctx, sqlc.ListPaymentsByFarmParams{FarmID: farmID, Lim: 20})
 }
 
 func (s *Service) inTx(ctx context.Context, fn func(*sqlc.Queries) error) error {

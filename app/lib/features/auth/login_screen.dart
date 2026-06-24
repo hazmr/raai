@@ -90,6 +90,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onPressed: _busy ? null : () => context.go('/register'),
                     child: Text(t.needAccount),
                   ),
+                  const Divider(height: AppTokens.s24),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : () => context.go('/doctor'),
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: Text(t.enterAsDoctor),
+                  ),
                 ],
               ),
             ),

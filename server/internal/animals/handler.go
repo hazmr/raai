@@ -61,7 +61,6 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 
 type animalBody struct {
 	Barcode string `json:"barcode"`
-	VisitID *int32 `json:"visitId"` // vet only: the open visit to scan under
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +74,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	caller, _ := auth.FromContext(r.Context())
-	a, err := h.svc.Create(r.Context(), caller, strings.TrimSpace(in.Barcode), in.VisitID)
+	a, err := h.svc.Create(r.Context(), caller, strings.TrimSpace(in.Barcode))
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return

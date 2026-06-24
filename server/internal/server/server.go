@@ -16,9 +16,10 @@ import (
 	"raai/internal/config"
 	"raai/internal/db/sqlc"
 	"raai/internal/httpx"
+	"raai/internal/invites"
+	"raai/internal/members"
 	mw "raai/internal/middleware"
 	"raai/internal/notes"
-	"raai/internal/visits"
 )
 
 // App bundles the built handler and the query layer (the latter so background
@@ -34,15 +35,16 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*App, error) {
 	// Services
 	tokens := auth.NewTokenManager(cfg.JWTKey, cfg.JWTIssuer, cfg.JWTAudience, cfg.AccessTokenTTL)
 	authMW := auth.NewMiddleware(tokens, q)
-	authSvc := auth.NewService(q, tokens, cfg.RefreshTokenTTL)
+	authSvc := auth.NewService(pool, q, tokens, cfg.RefreshTokenTTL)
 	authH := auth.NewHandler(authSvc, q)
 
 	notesSvc := notes.NewService(q)
 	notesH := notes.NewHandler(notesSvc)
 	animalsSvc := animals.NewService(q, notesSvc)
 	animalsH := animals.NewHandler(animalsSvc)
-	visitsSvc := visits.NewService(q, animalsSvc)
-	visitsH := visits.NewHandler(visitsSvc)
+
+	membersH := members.NewHandler(members.NewService(pool, q))
+	invitesH := invites.NewHandler(invites.NewService(q, tokens))
 
 	billingSvc := billing.NewService(q, billing.Config{
 		InstapayIPA:     cfg.InstapayIPA,
@@ -84,13 +86,14 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*App, error) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(apiLimiter.Middleware)
 
-		// Public auth endpoints (extra rate limiting on credential checks).
+		// Public, rate-limited: credential checks + doctor invite redemption.
 		r.Group(func(r chi.Router) {
 			r.Use(loginLimiter.Middleware)
 			r.Route("/auth", authH.Routes)
+			r.Post("/doctor/redeem", invitesH.Redeem)
 		})
 
-		// Authenticated, NOT behind the paywall (§7.2: auth, me, billing, admin).
+		// Authenticated, NOT behind the paywall (§7.2: auth, me, billing, admin, members).
 		r.Group(func(r chi.Router) {
 			r.Use(authMW.Authenticator)
 			r.Post("/auth/logout", authH.Logout)
@@ -100,15 +103,24 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*App, error) {
 				r.Use(authMW.RequireAdmin)
 				adminJSON.Routes(r)
 			})
+			// Farm-admin member management works even if the subscription lapsed.
+			r.Route("/farm/members", func(r chi.Router) {
+				r.Use(authMW.RequireFarmAdmin)
+				membersH.Routes(r)
+			})
 
-			// Authenticated AND behind the subscription gate.
+			// Authenticated AND behind the subscription gate (keyed off the farm).
 			r.Group(func(r chi.Router) {
 				r.Use(gate.Middleware)
 				r.Route("/animals", func(r chi.Router) {
 					animalsH.Routes(r)
 					r.Route("/{animalID}/notes", notesH.Routes)
 				})
-				r.Route("/visits", visitsH.Routes)
+				// Doctor invites are farm-admin only.
+				r.Route("/invites", func(r chi.Router) {
+					r.Use(authMW.RequireFarmAdmin)
+					invitesH.Routes(r)
+				})
 			})
 		})
 	})

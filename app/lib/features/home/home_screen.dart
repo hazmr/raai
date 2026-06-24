@@ -8,7 +8,10 @@ import '../../core/theme.dart';
 import '../../l10n/app_localizations.dart';
 import 'home_providers.dart';
 
-/// Bento home — the only "designed" screen (§1.2). Renders the farmer or vet grid.
+/// Bento home — the only "designed" screen (§1.2). Renders by role:
+///   admin  → Herd, Scan, Farmers, Doctor visits, Subscription
+///   farmer → Herd, Scan
+///   doctor → Herd, Scan (within the farm they were invited to)
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -19,7 +22,7 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(t.appTitle),
+        title: Text(session.farmName?.isNotEmpty == true ? session.farmName! : t.appTitle),
         actions: [
           IconButton(
             tooltip: t.logout,
@@ -31,15 +34,51 @@ class HomeScreen extends ConsumerWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppTokens.s16),
-          child: session.isVet ? const _VetGrid() : const _FarmerGrid(),
+          child: session.isDoctor
+              ? const _SimpleGrid()
+              : session.isAdmin
+                  ? const _AdminGrid()
+                  : const _SimpleGrid(),
         ),
       ),
     );
   }
 }
 
-class _FarmerGrid extends ConsumerWidget {
-  const _FarmerGrid();
+/// Herd + Scan only — used by farmers and by invited doctors.
+class _SimpleGrid extends ConsumerWidget {
+  const _SimpleGrid();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = L10n.of(context);
+    final herd = ref.watch(herdSummaryProvider);
+    return Column(
+      children: [
+        Expanded(
+          flex: 2,
+          child: BentoTile(
+            icon: Icons.pets,
+            title: t.tileHerd,
+            subtitle: herd.maybeWhen(data: (s) => t.herdCount(s.count), orElse: () => null),
+            onTap: () => context.go('/animals'),
+          ),
+        ),
+        const SizedBox(height: AppTokens.s12),
+        Expanded(
+          child: BentoTile(
+            icon: Icons.qr_code_scanner,
+            title: t.tileScan,
+            onTap: () => context.go('/scan'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AdminGrid extends ConsumerWidget {
+  const _AdminGrid();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -57,10 +96,7 @@ class _FarmerGrid extends ConsumerWidget {
                 child: BentoTile(
                   icon: Icons.pets,
                   title: t.tileHerd,
-                  subtitle: herd.maybeWhen(
-                    data: (s) => t.herdCount(s.count),
-                    orElse: () => null,
-                  ),
+                  subtitle: herd.maybeWhen(data: (s) => t.herdCount(s.count), orElse: () => null),
                   onTap: () => context.go('/animals'),
                 ),
               ),
@@ -78,9 +114,9 @@ class _FarmerGrid extends ConsumerWidget {
                     const SizedBox(height: AppTokens.s12),
                     Expanded(
                       child: BentoTile(
-                        icon: Icons.add_circle_outline,
-                        title: t.tileNewVisit,
-                        onTap: () => context.go('/visits'),
+                        icon: Icons.medical_services,
+                        title: t.tileDoctors,
+                        onTap: () => context.go('/invites'),
                       ),
                     ),
                   ],
@@ -90,36 +126,22 @@ class _FarmerGrid extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: AppTokens.s12),
-        _SubscriptionTile(status: billing),
-      ],
-    );
-  }
-}
-
-class _VetGrid extends StatelessWidget {
-  const _VetGrid();
-
-  @override
-  Widget build(BuildContext context) {
-    final t = L10n.of(context);
-    return Column(
-      children: [
         Expanded(
-          flex: 2,
-          child: BentoTile(
-            icon: Icons.event_available,
-            title: t.tileOpenVisits,
-            onTap: () => context.go('/visits'),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: BentoTile(
+                  icon: Icons.group,
+                  title: t.tileFarmers,
+                  onTap: () => context.go('/members'),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: AppTokens.s12),
-        Expanded(
-          child: BentoTile(
-            icon: Icons.qr_code_scanner,
-            title: t.tileScan,
-            onTap: () => context.go('/scan'),
-          ),
-        ),
+        _SubscriptionTile(status: billing),
       ],
     );
   }

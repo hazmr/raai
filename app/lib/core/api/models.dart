@@ -1,4 +1,4 @@
-// Plain DTOs mirroring the backend's camelCase JSON (SYSTEM_DESIGN.md §6).
+// Plain DTOs mirroring the backend's camelCase JSON (farm-tenant model).
 
 class AuthTokens {
   AuthTokens({required this.accessToken, required this.refreshToken});
@@ -11,23 +11,53 @@ class AuthTokens {
       );
 }
 
+class Farm {
+  Farm({required this.id, required this.name});
+  final int id;
+  final String name;
+
+  factory Farm.fromJson(Map<String, dynamic> j) =>
+      Farm(id: j['id'] as int, name: j['name'] as String? ?? '');
+}
+
 class User {
   User({
     required this.id,
     required this.phoneNumber,
-    required this.role,
     required this.isAdmin,
+    required this.farm,
+    required this.farmRole,
   });
   final int id;
   final String phoneNumber;
-  final String role; // farmer | vet
-  final bool isAdmin;
+  final bool isAdmin; // app super-admin
+  final Farm farm;
+  final String farmRole; // admin | farmer
 
   factory User.fromJson(Map<String, dynamic> j) => User(
         id: j['id'] as int,
         phoneNumber: j['phoneNumber'] as String,
-        role: j['role'] as String? ?? 'farmer',
         isAdmin: j['isAdmin'] as bool? ?? false,
+        farm: Farm.fromJson((j['farm'] as Map<String, dynamic>?) ?? const {'id': 0}),
+        farmRole: j['farmRole'] as String? ?? 'farmer',
+      );
+}
+
+/// What a doctor gets back from redeeming an invite QR.
+class DoctorSession {
+  DoctorSession({
+    required this.accessToken,
+    required this.farm,
+    required this.doctorLabel,
+  });
+  final String accessToken;
+  final Farm farm;
+  final String doctorLabel;
+
+  factory DoctorSession.fromJson(Map<String, dynamic> j) => DoctorSession(
+        accessToken: j['accessToken'] as String,
+        farm: Farm.fromJson((j['farm'] as Map<String, dynamic>?) ?? const {'id': 0}),
+        doctorLabel: j['doctorLabel'] as String? ?? '',
       );
 }
 
@@ -45,11 +75,7 @@ class Page<T> {
 }
 
 class Animal {
-  Animal({
-    required this.id,
-    required this.barcode,
-    required this.noteCount,
-  });
+  Animal({required this.id, required this.barcode, required this.noteCount});
   final int id;
   final String barcode;
   final int noteCount;
@@ -66,50 +92,76 @@ class Note {
     required this.id,
     required this.animalId,
     required this.body,
-    required this.authorRole,
+    required this.authorKind,
+    required this.authorLabel,
     required this.createdAt,
-    this.visitId,
   });
   final int id;
   final int animalId;
   final String body;
-  final String authorRole; // farmer | vet
+  final String authorKind; // member | doctor
+  final String authorLabel; // display name stamped at write time
   final DateTime createdAt;
-  final int? visitId;
+
+  bool get isDoctor => authorKind == 'doctor';
 
   factory Note.fromJson(Map<String, dynamic> j) => Note(
         id: j['id'] as int,
         animalId: j['animalId'] as int,
         body: j['body'] as String,
-        authorRole: j['authorRole'] as String? ?? 'farmer',
+        authorKind: j['authorKind'] as String? ?? 'member',
+        authorLabel: j['authorLabel'] as String? ?? '',
         createdAt: DateTime.parse(j['createdAt'] as String),
-        visitId: j['visitId'] as int?,
       );
 }
 
-class Visit {
-  Visit({
+/// A farm member (farmer or admin).
+class Member {
+  Member({
+    required this.userId,
+    required this.phoneNumber,
+    required this.role,
+  });
+  final int userId;
+  final String phoneNumber;
+  final String role; // admin | farmer
+
+  factory Member.fromJson(Map<String, dynamic> j) => Member(
+        userId: j['userId'] as int,
+        phoneNumber: j['phoneNumber'] as String,
+        role: j['role'] as String? ?? 'farmer',
+      );
+}
+
+/// A temporary doctor invite in the farm's history.
+class Invite {
+  Invite({
     required this.id,
-    required this.locationType,
+    required this.doctorLabel,
     required this.status,
-    required this.openedAt,
-    this.vetId,
-    this.locationLabel,
+    required this.noteCount,
+    required this.createdAt,
+    this.token,
+    this.endedAt,
   });
   final int id;
-  final String locationType; // clinic | farm
-  final String status; // open | closed
-  final DateTime openedAt;
-  final int? vetId;
-  final String? locationLabel;
+  final String doctorLabel;
+  final String status; // active | ended
+  final int noteCount;
+  final DateTime createdAt;
+  final String? token; // the QR secret (present on create)
+  final DateTime? endedAt;
 
-  factory Visit.fromJson(Map<String, dynamic> j) => Visit(
+  bool get isActive => status == 'active';
+
+  factory Invite.fromJson(Map<String, dynamic> j) => Invite(
         id: j['id'] as int,
-        locationType: j['locationType'] as String,
-        status: j['status'] as String,
-        openedAt: DateTime.parse(j['openedAt'] as String),
-        vetId: j['vetId'] as int?,
-        locationLabel: j['locationLabel'] as String?,
+        doctorLabel: j['doctorLabel'] as String? ?? '',
+        status: j['status'] as String? ?? 'active',
+        noteCount: (j['noteCount'] as int?) ?? 0,
+        createdAt: DateTime.parse(j['createdAt'] as String),
+        token: j['token'] as String?,
+        endedAt: j['endedAt'] == null ? null : DateTime.parse(j['endedAt'] as String),
       );
 }
 

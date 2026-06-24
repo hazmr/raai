@@ -12,14 +12,14 @@ import (
 )
 
 const createAnimal = `-- name: CreateAnimal :one
-INSERT INTO animals (barcode, user_id)
+INSERT INTO animals (barcode, farm_id)
 VALUES ($1, $2)
 RETURNING id, barcode, created_at, updated_at
 `
 
 type CreateAnimalParams struct {
 	Barcode string
-	UserID  int32
+	FarmID  int32
 }
 
 type CreateAnimalRow struct {
@@ -30,7 +30,7 @@ type CreateAnimalRow struct {
 }
 
 func (q *Queries) CreateAnimal(ctx context.Context, arg CreateAnimalParams) (CreateAnimalRow, error) {
-	row := q.db.QueryRow(ctx, createAnimal, arg.Barcode, arg.UserID)
+	row := q.db.QueryRow(ctx, createAnimal, arg.Barcode, arg.FarmID)
 	var i CreateAnimalRow
 	err := row.Scan(
 		&i.ID,
@@ -42,16 +42,16 @@ func (q *Queries) CreateAnimal(ctx context.Context, arg CreateAnimalParams) (Cre
 }
 
 const deleteAnimal = `-- name: DeleteAnimal :execrows
-DELETE FROM animals WHERE id = $1 AND user_id = $2
+DELETE FROM animals WHERE id = $1 AND farm_id = $2
 `
 
 type DeleteAnimalParams struct {
 	ID     int32
-	UserID int32
+	FarmID int32
 }
 
 func (q *Queries) DeleteAnimal(ctx context.Context, arg DeleteAnimalParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteAnimal, arg.ID, arg.UserID)
+	result, err := q.db.Exec(ctx, deleteAnimal, arg.ID, arg.FarmID)
 	if err != nil {
 		return 0, err
 	}
@@ -62,12 +62,12 @@ const getAnimal = `-- name: GetAnimal :one
 SELECT a.id, a.barcode, a.created_at, a.updated_at,
        (SELECT count(*) FROM animal_notes n WHERE n.animal_id = a.id)::bigint AS note_count
 FROM animals a
-WHERE a.id = $1 AND a.user_id = $2
+WHERE a.id = $1 AND a.farm_id = $2
 `
 
 type GetAnimalParams struct {
 	ID     int32
-	UserID int32
+	FarmID int32
 }
 
 type GetAnimalRow struct {
@@ -79,7 +79,7 @@ type GetAnimalRow struct {
 }
 
 func (q *Queries) GetAnimal(ctx context.Context, arg GetAnimalParams) (GetAnimalRow, error) {
-	row := q.db.QueryRow(ctx, getAnimal, arg.ID, arg.UserID)
+	row := q.db.QueryRow(ctx, getAnimal, arg.ID, arg.FarmID)
 	var i GetAnimalRow
 	err := row.Scan(
 		&i.ID,
@@ -95,12 +95,12 @@ const getAnimalByBarcode = `-- name: GetAnimalByBarcode :one
 SELECT a.id, a.barcode, a.created_at, a.updated_at,
        (SELECT count(*) FROM animal_notes n WHERE n.animal_id = a.id)::bigint AS note_count
 FROM animals a
-WHERE a.barcode = $1 AND a.user_id = $2
+WHERE a.barcode = $1 AND a.farm_id = $2
 `
 
 type GetAnimalByBarcodeParams struct {
 	Barcode string
-	UserID  int32
+	FarmID  int32
 }
 
 type GetAnimalByBarcodeRow struct {
@@ -112,7 +112,7 @@ type GetAnimalByBarcodeRow struct {
 }
 
 func (q *Queries) GetAnimalByBarcode(ctx context.Context, arg GetAnimalByBarcodeParams) (GetAnimalByBarcodeRow, error) {
-	row := q.db.QueryRow(ctx, getAnimalByBarcode, arg.Barcode, arg.UserID)
+	row := q.db.QueryRow(ctx, getAnimalByBarcode, arg.Barcode, arg.FarmID)
 	var i GetAnimalByBarcodeRow
 	err := row.Scan(
 		&i.ID,
@@ -124,28 +124,11 @@ func (q *Queries) GetAnimalByBarcode(ctx context.Context, arg GetAnimalByBarcode
 	return i, err
 }
 
-const getAnimalOwner = `-- name: GetAnimalOwner :one
-SELECT id, user_id FROM animals WHERE id = $1
-`
-
-type GetAnimalOwnerRow struct {
-	ID     int32
-	UserID int32
-}
-
-// Unscoped lookup used only to resolve a vet's access via the animal's farmer.
-func (q *Queries) GetAnimalOwner(ctx context.Context, id int32) (GetAnimalOwnerRow, error) {
-	row := q.db.QueryRow(ctx, getAnimalOwner, id)
-	var i GetAnimalOwnerRow
-	err := row.Scan(&i.ID, &i.UserID)
-	return i, err
-}
-
 const listAnimals = `-- name: ListAnimals :many
 SELECT a.id, a.barcode, a.created_at, a.updated_at,
        (SELECT count(*) FROM animal_notes n WHERE n.animal_id = a.id)::bigint AS note_count
 FROM animals a
-WHERE a.user_id = $1
+WHERE a.farm_id = $1
   AND ($2::timestamptz IS NULL
        OR (a.created_at, a.id) < ($2::timestamptz, $3::int))
 ORDER BY a.created_at DESC, a.id DESC
@@ -153,7 +136,7 @@ LIMIT $4::int
 `
 
 type ListAnimalsParams struct {
-	UserID     int32
+	FarmID     int32
 	CursorTime pgtype.Timestamptz
 	CursorID   int32
 	Lim        int32
@@ -169,7 +152,7 @@ type ListAnimalsRow struct {
 
 func (q *Queries) ListAnimals(ctx context.Context, arg ListAnimalsParams) ([]ListAnimalsRow, error) {
 	rows, err := q.db.Query(ctx, listAnimals,
-		arg.UserID,
+		arg.FarmID,
 		arg.CursorTime,
 		arg.CursorID,
 		arg.Lim,
@@ -201,14 +184,14 @@ func (q *Queries) ListAnimals(ctx context.Context, arg ListAnimalsParams) ([]Lis
 const updateAnimal = `-- name: UpdateAnimal :one
 UPDATE animals
 SET barcode = $1, updated_at = now()
-WHERE id = $2 AND user_id = $3
+WHERE id = $2 AND farm_id = $3
 RETURNING id, barcode, created_at, updated_at
 `
 
 type UpdateAnimalParams struct {
 	Barcode string
 	ID      int32
-	UserID  int32
+	FarmID  int32
 }
 
 type UpdateAnimalRow struct {
@@ -219,7 +202,7 @@ type UpdateAnimalRow struct {
 }
 
 func (q *Queries) UpdateAnimal(ctx context.Context, arg UpdateAnimalParams) (UpdateAnimalRow, error) {
-	row := q.db.QueryRow(ctx, updateAnimal, arg.Barcode, arg.ID, arg.UserID)
+	row := q.db.QueryRow(ctx, updateAnimal, arg.Barcode, arg.ID, arg.FarmID)
 	var i UpdateAnimalRow
 	err := row.Scan(
 		&i.ID,

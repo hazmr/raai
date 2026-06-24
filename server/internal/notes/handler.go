@@ -26,8 +26,7 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 type noteBody struct {
-	Body    string `json:"body"`
-	VisitID *int32 `json:"visitId"`
+	Body string `json:"body"`
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +85,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	caller, _ := auth.FromContext(r.Context())
-	n, err := h.svc.Create(r.Context(), caller, animalID, in.Body, in.VisitID)
+	n, err := h.svc.Create(r.Context(), caller, animalID, in.Body)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return

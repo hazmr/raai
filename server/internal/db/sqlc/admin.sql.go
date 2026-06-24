@@ -44,33 +44,29 @@ func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 	return i, err
 }
 
-const getSubscriberDetail = `-- name: GetSubscriberDetail :one
-SELECT u.id, u.phone_number, u.role, u.is_admin, u.created_at,
+const getFarmDetail = `-- name: GetFarmDetail :one
+SELECT f.id, f.name, f.created_at,
        s.plan, s.status, s.current_period_end
-FROM users u
-LEFT JOIN subscriptions s ON s.user_id = u.id
-WHERE u.id = $1
+FROM farms f
+LEFT JOIN subscriptions s ON s.farm_id = f.id
+WHERE f.id = $1
 `
 
-type GetSubscriberDetailRow struct {
+type GetFarmDetailRow struct {
 	ID               int32
-	PhoneNumber      string
-	Role             string
-	IsAdmin          bool
+	Name             string
 	CreatedAt        pgtype.Timestamptz
 	Plan             *string
 	Status           *string
 	CurrentPeriodEnd pgtype.Timestamptz
 }
 
-func (q *Queries) GetSubscriberDetail(ctx context.Context, id int32) (GetSubscriberDetailRow, error) {
-	row := q.db.QueryRow(ctx, getSubscriberDetail, id)
-	var i GetSubscriberDetailRow
+func (q *Queries) GetFarmDetail(ctx context.Context, id int32) (GetFarmDetailRow, error) {
+	row := q.db.QueryRow(ctx, getFarmDetail, id)
+	var i GetFarmDetailRow
 	err := row.Scan(
 		&i.ID,
-		&i.PhoneNumber,
-		&i.Role,
-		&i.IsAdmin,
+		&i.Name,
 		&i.CreatedAt,
 		&i.Plan,
 		&i.Status,
@@ -79,10 +75,66 @@ func (q *Queries) GetSubscriberDetail(ctx context.Context, id int32) (GetSubscri
 	return i, err
 }
 
+const listFarms = `-- name: ListFarms :many
+SELECT f.id, f.name, f.created_at,
+       (SELECT count(*) FROM farm_members m WHERE m.farm_id = f.id)::bigint AS member_count,
+       s.plan, s.status, s.current_period_end
+FROM farms f
+LEFT JOIN subscriptions s ON s.farm_id = f.id
+WHERE ($1::text IS NULL OR f.name ILIKE '%' || $1::text || '%')
+ORDER BY f.created_at DESC, f.id DESC
+LIMIT $3::int OFFSET $2::int
+`
+
+type ListFarmsParams struct {
+	Q   *string
+	Off int32
+	Lim int32
+}
+
+type ListFarmsRow struct {
+	ID               int32
+	Name             string
+	CreatedAt        pgtype.Timestamptz
+	MemberCount      int64
+	Plan             *string
+	Status           *string
+	CurrentPeriodEnd pgtype.Timestamptz
+}
+
+func (q *Queries) ListFarms(ctx context.Context, arg ListFarmsParams) ([]ListFarmsRow, error) {
+	rows, err := q.db.Query(ctx, listFarms, arg.Q, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFarmsRow{}
+	for rows.Next() {
+		var i ListFarmsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.MemberCount,
+			&i.Plan,
+			&i.Status,
+			&i.CurrentPeriodEnd,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPaymentsDetailed = `-- name: ListPaymentsDetailed :many
-SELECT p.id, p.user_id, p.plan, p.amount_egp, p.instapay_ref, p.screenshot_url, p.status, p.reviewed_by, p.reviewed_at, p.note, p.created_at, u.phone_number
+SELECT p.id, p.plan, p.amount_egp, p.instapay_ref, p.screenshot_url, p.status, p.reviewed_by, p.reviewed_at, p.note, p.created_at, p.farm_id, p.created_by, f.name AS farm_name, u.phone_number AS submitted_by
 FROM payments p
-JOIN users u ON u.id = p.user_id
+JOIN farms f ON f.id = p.farm_id
+LEFT JOIN users u ON u.id = p.created_by
 WHERE ($1::text IS NULL OR p.status = $1::text)
 ORDER BY p.created_at DESC, p.id DESC
 LIMIT $2::int
@@ -95,7 +147,6 @@ type ListPaymentsDetailedParams struct {
 
 type ListPaymentsDetailedRow struct {
 	ID            int32
-	UserID        int32
 	Plan          string
 	AmountEgp     string
 	InstapayRef   string
@@ -105,7 +156,10 @@ type ListPaymentsDetailedRow struct {
 	ReviewedAt    pgtype.Timestamptz
 	Note          *string
 	CreatedAt     pgtype.Timestamptz
-	PhoneNumber   string
+	FarmID        int32
+	CreatedBy     *int32
+	FarmName      string
+	SubmittedBy   *string
 }
 
 func (q *Queries) ListPaymentsDetailed(ctx context.Context, arg ListPaymentsDetailedParams) ([]ListPaymentsDetailedRow, error) {
@@ -119,7 +173,6 @@ func (q *Queries) ListPaymentsDetailed(ctx context.Context, arg ListPaymentsDeta
 		var i ListPaymentsDetailedRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
 			&i.Plan,
 			&i.AmountEgp,
 			&i.InstapayRef,
@@ -129,61 +182,10 @@ func (q *Queries) ListPaymentsDetailed(ctx context.Context, arg ListPaymentsDeta
 			&i.ReviewedAt,
 			&i.Note,
 			&i.CreatedAt,
-			&i.PhoneNumber,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listSubscribers = `-- name: ListSubscribers :many
-SELECT u.id, u.phone_number, u.role, u.created_at,
-       s.plan, s.status, s.current_period_end
-FROM users u
-LEFT JOIN subscriptions s ON s.user_id = u.id
-WHERE ($1::text IS NULL OR u.phone_number ILIKE '%' || $1::text || '%')
-ORDER BY u.created_at DESC, u.id DESC
-LIMIT $3::int OFFSET $2::int
-`
-
-type ListSubscribersParams struct {
-	Phone *string
-	Off   int32
-	Lim   int32
-}
-
-type ListSubscribersRow struct {
-	ID               int32
-	PhoneNumber      string
-	Role             string
-	CreatedAt        pgtype.Timestamptz
-	Plan             *string
-	Status           *string
-	CurrentPeriodEnd pgtype.Timestamptz
-}
-
-func (q *Queries) ListSubscribers(ctx context.Context, arg ListSubscribersParams) ([]ListSubscribersRow, error) {
-	rows, err := q.db.Query(ctx, listSubscribers, arg.Phone, arg.Off, arg.Lim)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListSubscribersRow{}
-	for rows.Next() {
-		var i ListSubscribersRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PhoneNumber,
-			&i.Role,
-			&i.CreatedAt,
-			&i.Plan,
-			&i.Status,
-			&i.CurrentPeriodEnd,
+			&i.FarmID,
+			&i.CreatedBy,
+			&i.FarmName,
+			&i.SubmittedBy,
 		); err != nil {
 			return nil, err
 		}

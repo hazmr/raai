@@ -10,9 +10,15 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Claims is the access-token payload (§5): sub(uid), phone, jti, iss/aud/exp.
+// Claims is the access-token payload. Two principal kinds share it:
+//   - user  : Subject=user id, Kind="user",   Farm + FRole(admin|farmer), Phone.
+//   - doctor: Subject=invite id, Kind="doctor", Farm + FRole="doctor", Inv=invite id.
 type Claims struct {
-	Phone string `json:"phone"`
+	Phone string `json:"phone,omitempty"`
+	Farm  int32  `json:"farm,omitempty"`
+	Kind  string `json:"kind,omitempty"`  // user | doctor
+	FRole string `json:"frole,omitempty"` // admin | farmer | doctor
+	Inv   int32  `json:"inv,omitempty"`   // invite id (doctor only)
 	jwt.RegisteredClaims
 }
 
@@ -29,44 +35,61 @@ func NewTokenManager(key, issuer, audience string, ttl time.Duration) *TokenMana
 	return &TokenManager{key: []byte(key), issuer: issuer, audience: audience, ttl: ttl}
 }
 
-// Issue returns a signed access token for the user plus its absolute expiry.
-func (m *TokenManager) Issue(uid int32, phone string) (string, time.Time, error) {
+// IssueUser returns a signed access token for a logged-in user within their farm.
+func (m *TokenManager) IssueUser(uid int32, phone string, farm int32, frole string) (string, time.Time, error) {
+	return m.sign(Claims{
+		Phone: phone, Farm: farm, Kind: KindUser, FRole: frole,
+		RegisteredClaims: m.base(strconv.Itoa(int(uid))),
+	})
+}
+
+// IssueDoctor returns a signed access token for a redeemed doctor invite. There is
+// no user row — the principal is the invite itself, scoped to one farm.
+func (m *TokenManager) IssueDoctor(inviteID, farm int32) (string, time.Time, error) {
+	return m.sign(Claims{
+		Farm: farm, Kind: KindDoctor, FRole: RoleDoctor, Inv: inviteID,
+		RegisteredClaims: m.base(strconv.Itoa(int(inviteID))),
+	})
+}
+
+func (m *TokenManager) base(subject string) jwt.RegisteredClaims {
 	now := time.Now()
-	exp := now.Add(m.ttl)
-	claims := Claims{
-		Phone: phone,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   strconv.FormatInt(int64(uid), 10),
-			Issuer:    m.issuer,
-			Audience:  jwt.ClaimStrings{m.audience},
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(exp),
-			ID:        randomID(),
-		},
+	return jwt.RegisteredClaims{
+		Subject:   subject,
+		Issuer:    m.issuer,
+		Audience:  jwt.ClaimStrings{m.audience},
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(m.ttl)),
+		ID:        randomID(),
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+}
+
+func (m *TokenManager) sign(c Claims) (string, time.Time, error) {
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
 	signed, err := tok.SignedString(m.key)
-	return signed, exp, err
+	return signed, c.ExpiresAt.Time, err
 }
 
 // Parse validates a token's signature, issuer, audience and expiry, returning the
-// uid and phone.
-func (m *TokenManager) Parse(token string) (uid int32, phone string, err error) {
+// full claims.
+func (m *TokenManager) Parse(token string) (*Claims, error) {
 	claims := &Claims{}
-	_, err = jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
+	_, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
 		return m.key, nil
 	}, jwt.WithIssuer(m.issuer), jwt.WithAudience(m.audience))
 	if err != nil {
-		return 0, "", err
+		return nil, err
 	}
-	id, err := strconv.ParseInt(claims.Subject, 10, 32)
-	if err != nil {
-		return 0, "", err
-	}
-	return int32(id), claims.Phone, nil
+	return claims, nil
+}
+
+// SubjectID returns the numeric Subject (user id or invite id).
+func (c *Claims) SubjectID() (int32, error) {
+	id, err := strconv.ParseInt(c.Subject, 10, 32)
+	return int32(id), err
 }
 
 // NewRefreshToken returns a cryptographically random opaque token (§5).

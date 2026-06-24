@@ -1,6 +1,6 @@
 -- name: CreatePayment :one
-INSERT INTO payments (user_id, plan, amount_egp, instapay_ref, screenshot_url)
-VALUES (@user_id, @plan, @amount_egp, @instapay_ref, sqlc.narg('screenshot_url'))
+INSERT INTO payments (farm_id, created_by, plan, amount_egp, instapay_ref, screenshot_url)
+VALUES (@farm_id, @created_by, @plan, @amount_egp, @instapay_ref, sqlc.narg('screenshot_url'))
 RETURNING *;
 
 -- name: GetPaymentByRef :one
@@ -9,9 +9,9 @@ SELECT * FROM payments WHERE instapay_ref = @instapay_ref;
 -- name: GetPayment :one
 SELECT * FROM payments WHERE id = @id;
 
--- name: ListPaymentsByUser :many
+-- name: ListPaymentsByFarm :many
 SELECT * FROM payments
-WHERE user_id = @user_id
+WHERE farm_id = @farm_id
   AND (sqlc.narg('cursor_time')::timestamptz IS NULL
        OR (created_at, id) < (sqlc.narg('cursor_time')::timestamptz, sqlc.arg('cursor_id')::int))
 ORDER BY created_at DESC, id DESC

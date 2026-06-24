@@ -8,11 +8,11 @@
   <a class="btn ghost" href="/admin/payments?status=all">All</a>
 </div>
 <table>
-  <thead><tr><th>User</th><th>Plan</th><th>Amount</th><th>InstaPay ref</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+  <thead><tr><th>Farm</th><th>Plan</th><th>Amount</th><th>InstaPay ref</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
   <tbody>
   {{range .Data.Rows}}
     <tr>
-      <td><a href="/admin/users/{{.ID}}">{{.Phone}}</a></td>
+      <td>{{.Farm}}{{if .Phone}} <span class="muted">· {{.Phone}}</span>{{end}}</td>
       <td>{{.Plan}}</td>
       <td>{{.Amount}} EGP</td>
       <td>

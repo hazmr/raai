@@ -29,7 +29,7 @@ func (h *Handler) plans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-	res, err := h.svc.Status(r.Context(), auth.MustUserID(r.Context()))
+	res, err := h.svc.Status(r.Context(), auth.MustFarmID(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
@@ -45,12 +45,17 @@ type submitBody struct {
 }
 
 func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
+	caller := auth.MustIdentity(r.Context())
+	if caller.FarmRole != auth.RoleAdmin {
+		httpx.WriteError(w, r, httpx.ErrForbidden("only the farm admin manages billing"))
+		return
+	}
 	var in submitBody
 	if err := httpx.DecodeJSON(r, &in); err != nil {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	p, err := h.svc.SubmitPayment(r.Context(), auth.MustUserID(r.Context()),
+	p, err := h.svc.SubmitPayment(r.Context(), caller.FarmID, caller.UserID,
 		in.Plan, strings.TrimSpace(in.InstapayRef), in.AmountEGP, in.ScreenshotURL)
 	if err != nil {
 		httpx.WriteError(w, r, err)
@@ -60,12 +65,17 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
+	caller := auth.MustIdentity(r.Context())
+	if caller.FarmRole != auth.RoleAdmin {
+		httpx.WriteError(w, r, httpx.ErrForbidden("only the farm admin manages billing"))
+		return
+	}
 	page, err := httpx.ParsePage(r)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	res, err := h.svc.ListUserPayments(r.Context(), auth.MustUserID(r.Context()), page)
+	res, err := h.svc.ListFarmPayments(r.Context(), caller.FarmID, page)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return

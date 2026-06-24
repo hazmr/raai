@@ -1,5 +1,6 @@
-// Package notes implements the animal-notes sub-resource (§6.5) including the
-// farmer/vet authorization rules (§4.3).
+// Package notes implements the animal-notes sub-resource (§6.5). Notes are scoped
+// to the caller's farm; authorship records whether a member or an invited doctor
+// wrote them (§4.3), with the display name stamped at write time.
 package notes
 
 import (
@@ -20,85 +21,49 @@ type Service struct {
 func NewService(q *sqlc.Queries) *Service { return &Service{q: q} }
 
 // DTO is the §6.5 Note shape; the DB column `notes` is exposed as `body`.
+// authorKind (member|doctor) + authorLabel let the UI badge a doctor's note.
 type DTO struct {
 	ID         int32     `json:"id"`
 	AnimalID   int32     `json:"animalId"`
 	Body       string    `json:"body"`
-	AuthorID   int32     `json:"authorId"`
-	AuthorRole string    `json:"authorRole"`
-	VisitID    *int32    `json:"visitId"`
+	AuthorKind string    `json:"authorKind"`
+	AuthorLabel string   `json:"authorLabel"`
+	InviteID   *int32    `json:"inviteId"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 func toDTO(n sqlc.AnimalNote) DTO {
 	return DTO{
-		ID:         n.ID,
-		AnimalID:   n.AnimalID,
-		Body:       n.Notes,
-		AuthorID:   n.AuthorID,
-		AuthorRole: n.AuthorRole,
-		VisitID:    n.VisitID,
-		CreatedAt:  httpx.TimeOf(n.CreatedAt),
-		UpdatedAt:  httpx.TimeOf(n.UpdatedAt),
+		ID:          n.ID,
+		AnimalID:    n.AnimalID,
+		Body:        n.Notes,
+		AuthorKind:  n.AuthorKind,
+		AuthorLabel: n.AuthorLabel,
+		InviteID:    n.AuthorInviteID,
+		CreatedAt:   httpx.TimeOf(n.CreatedAt),
+		UpdatedAt:   httpx.TimeOf(n.UpdatedAt),
 	}
 }
 
-// resolveReadOwner returns the farmer id that owns animalID, enforcing access:
-// a farmer must own it; a vet must hold an open visit with the owner and that
-// owner's subscription must be active. Failures map to 404 to avoid leaking ids.
-func (s *Service) resolveReadOwner(ctx context.Context, caller auth.Identity, animalID int32) (int32, error) {
-	if caller.Role == auth.RoleVet {
-		owner, err := s.q.GetAnimalOwner(ctx, animalID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, httpx.ErrNotFound("animal not found")
-			}
-			return 0, err
-		}
-		has, err := s.q.VetHasOpenVisitWithFarmer(ctx, sqlc.VetHasOpenVisitWithFarmerParams{
-			VetID: &caller.UserID, FarmerID: owner.UserID,
-		})
-		if err != nil {
-			return 0, err
-		}
-		if !has {
-			return 0, httpx.ErrNotFound("animal not found")
-		}
-		if err := s.requireFarmerActive(ctx, owner.UserID); err != nil {
-			return 0, err
-		}
-		return owner.UserID, nil
-	}
-	// Farmer: ownership is enforced by the scoped GetAnimal.
-	if _, err := s.q.GetAnimal(ctx, sqlc.GetAnimalParams{ID: animalID, UserID: caller.UserID}); err != nil {
+// requireAnimal confirms the animal belongs to the caller's farm (else 404).
+func (s *Service) requireAnimal(ctx context.Context, caller auth.Identity, animalID int32) error {
+	if _, err := s.q.GetAnimal(ctx, sqlc.GetAnimalParams{ID: animalID, FarmID: caller.FarmID}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, httpx.ErrNotFound("animal not found")
+			return httpx.ErrNotFound("animal not found")
 		}
-		return 0, err
-	}
-	return caller.UserID, nil
-}
-
-func (s *Service) requireFarmerActive(ctx context.Context, farmerID int32) error {
-	active, err := s.q.IsSubscriptionActive(ctx, farmerID)
-	if err != nil {
 		return err
-	}
-	if !active {
-		return httpx.ErrSubscriptionRequired("the herd owner's subscription is inactive")
 	}
 	return nil
 }
 
 func (s *Service) List(ctx context.Context, caller auth.Identity, animalID int32, page httpx.Page) (httpx.List[DTO], error) {
-	owner, err := s.resolveReadOwner(ctx, caller, animalID)
-	if err != nil {
+	if err := s.requireAnimal(ctx, caller, animalID); err != nil {
 		return httpx.List[DTO]{}, err
 	}
 	rows, err := s.q.ListNotes(ctx, sqlc.ListNotesParams{
 		AnimalID:   animalID,
-		OwnerID:    owner,
+		FarmID:     caller.FarmID,
 		CursorTime: page.CursorTime(),
 		CursorID:   page.CursorID(),
 		Lim:        page.Limit,
@@ -110,11 +75,7 @@ func (s *Service) List(ctx context.Context, caller auth.Identity, animalID int32
 }
 
 func (s *Service) Get(ctx context.Context, caller auth.Identity, animalID, noteID int32) (DTO, error) {
-	owner, err := s.resolveReadOwner(ctx, caller, animalID)
-	if err != nil {
-		return DTO{}, err
-	}
-	n, err := s.q.GetNote(ctx, sqlc.GetNoteParams{ID: noteID, AnimalID: animalID, OwnerID: owner})
+	n, err := s.q.GetNote(ctx, sqlc.GetNoteParams{ID: noteID, AnimalID: animalID, FarmID: caller.FarmID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DTO{}, httpx.ErrNotFound("note not found")
@@ -124,78 +85,49 @@ func (s *Service) Get(ctx context.Context, caller auth.Identity, animalID, noteI
 	return toDTO(n), nil
 }
 
-// Create writes a note, enforcing the §6.5 rule that a vet must supply an open
-// visit they're assigned to and the farmer (the visit owner) must be active.
-func (s *Service) Create(ctx context.Context, caller auth.Identity, animalID int32, body string, visitID *int32) (DTO, error) {
-	owner, role, vid, err := s.resolveWriteContext(ctx, caller, animalID, visitID)
-	if err != nil {
+// Create writes a note authored by the caller — a member (author_user_id) or a
+// doctor (author_invite_id). The display name is stamped from the identity.
+func (s *Service) Create(ctx context.Context, caller auth.Identity, animalID int32, body string) (DTO, error) {
+	if err := s.requireAnimal(ctx, caller, animalID); err != nil {
 		return DTO{}, err
 	}
-	// Confirm the animal belongs to the resolved owner before writing.
-	if _, err := s.q.GetAnimal(ctx, sqlc.GetAnimalParams{ID: animalID, UserID: owner}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return DTO{}, httpx.ErrNotFound("animal not found")
-		}
-		return DTO{}, err
+	params := sqlc.CreateNoteParams{
+		AnimalID:    animalID,
+		Notes:       body,
+		AuthorLabel: caller.Label,
 	}
-	n, err := s.q.CreateNote(ctx, sqlc.CreateNoteParams{
-		AnimalID:   animalID,
-		Notes:      body,
-		AuthorID:   caller.UserID,
-		AuthorRole: role,
-		VisitID:    vid,
-	})
+	if caller.Kind == auth.KindDoctor {
+		params.AuthorKind = "doctor"
+		params.AuthorInviteID = &caller.InviteID
+	} else {
+		params.AuthorKind = "member"
+		params.AuthorUserID = &caller.UserID
+	}
+	n, err := s.q.CreateNote(ctx, params)
 	if err != nil {
 		return DTO{}, err
 	}
 	return toDTO(n), nil
 }
 
-func (s *Service) resolveWriteContext(ctx context.Context, caller auth.Identity, animalID int32, visitID *int32) (owner int32, role string, vid *int32, err error) {
-	if caller.Role == auth.RoleVet {
-		if visitID == nil {
-			return 0, "", nil, httpx.ErrValidation("a vet must write notes inside a visit", map[string]string{"visitId": "is required"})
-		}
-		visit, err := s.q.GetOpenVisitForVet(ctx, sqlc.GetOpenVisitForVetParams{ID: *visitID, VetID: &caller.UserID})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, "", nil, httpx.ErrForbidden("no open visit assigned to you with this id")
-			}
-			return 0, "", nil, err
-		}
-		if err := s.requireFarmerActive(ctx, visit.FarmerID); err != nil {
-			return 0, "", nil, err
-		}
-		return visit.FarmerID, auth.RoleVet, visitID, nil
-	}
-	// Farmer: visit is optional; if given it must be theirs and open.
-	if visitID != nil {
-		visit, err := s.q.GetVisitForFarmer(ctx, sqlc.GetVisitForFarmerParams{ID: *visitID, FarmerID: caller.UserID})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, "", nil, httpx.ErrNotFound("visit not found")
-			}
-			return 0, "", nil, err
-		}
-		if visit.Status != "open" {
-			return 0, "", nil, httpx.ErrValidation("visit is closed", map[string]string{"visitId": "must reference an open visit"})
-		}
-	}
-	return caller.UserID, auth.RoleFarmer, visitID, nil
-}
-
-// Update edits a note; only the author may change it (and a vet only while their
-// visit remains open, enforced via resolveReadOwner).
+// Update edits a note; only its author may change it.
 func (s *Service) Update(ctx context.Context, caller auth.Identity, animalID, noteID int32, body string) (DTO, error) {
-	if _, err := s.resolveReadOwner(ctx, caller, animalID); err != nil {
+	if err := s.requireAnimal(ctx, caller, animalID); err != nil {
 		return DTO{}, err
 	}
-	n, err := s.q.UpdateNote(ctx, sqlc.UpdateNoteParams{
-		Notes:    body,
-		ID:       noteID,
-		AnimalID: animalID,
-		AuthorID: caller.UserID,
-	})
+	var (
+		n   sqlc.AnimalNote
+		err error
+	)
+	if caller.Kind == auth.KindDoctor {
+		n, err = s.q.UpdateNoteByInvite(ctx, sqlc.UpdateNoteByInviteParams{
+			Notes: body, ID: noteID, AnimalID: animalID, AuthorInviteID: &caller.InviteID,
+		})
+	} else {
+		n, err = s.q.UpdateNoteByUser(ctx, sqlc.UpdateNoteByUserParams{
+			Notes: body, ID: noteID, AnimalID: animalID, AuthorUserID: &caller.UserID,
+		})
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DTO{}, httpx.ErrNotFound("note not found or not yours to edit")
@@ -206,10 +138,18 @@ func (s *Service) Update(ctx context.Context, caller auth.Identity, animalID, no
 }
 
 func (s *Service) Delete(ctx context.Context, caller auth.Identity, animalID, noteID int32) error {
-	if _, err := s.resolveReadOwner(ctx, caller, animalID); err != nil {
+	if err := s.requireAnimal(ctx, caller, animalID); err != nil {
 		return err
 	}
-	rows, err := s.q.DeleteNote(ctx, sqlc.DeleteNoteParams{ID: noteID, AnimalID: animalID, AuthorID: caller.UserID})
+	var (
+		rows int64
+		err  error
+	)
+	if caller.Kind == auth.KindDoctor {
+		rows, err = s.q.DeleteNoteByInvite(ctx, sqlc.DeleteNoteByInviteParams{ID: noteID, AnimalID: animalID, AuthorInviteID: &caller.InviteID})
+	} else {
+		rows, err = s.q.DeleteNoteByUser(ctx, sqlc.DeleteNoteByUserParams{ID: noteID, AnimalID: animalID, AuthorUserID: &caller.UserID})
+	}
 	if err != nil {
 		return err
 	}
@@ -223,7 +163,7 @@ func (s *Service) Delete(ctx context.Context, caller auth.Identity, animalID, no
 func (s *Service) EmbedFirstPage(ctx context.Context, caller auth.Identity, animalID int32) ([]DTO, error) {
 	rows, err := s.q.ListNotes(ctx, sqlc.ListNotesParams{
 		AnimalID: animalID,
-		OwnerID:  caller.UserID,
+		FarmID:   caller.FarmID,
 		Lim:      50,
 	})
 	if err != nil {

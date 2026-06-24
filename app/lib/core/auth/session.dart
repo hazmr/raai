@@ -19,7 +19,7 @@ final dioClientProvider = Provider<DioClient>((ref) {
 
 final apiProvider = Provider<RaaiApi>((ref) => RaaiApi(ref.watch(dioClientProvider)));
 
-/// Set by the dio interceptor on any 402; the router redirects farmers to /paywall.
+/// Set by the dio interceptor on any 402; the router redirects farm admins to /paywall.
 final paywallProvider = StateProvider<bool>((ref) => false);
 
 /// --- session state ---
@@ -27,12 +27,15 @@ final paywallProvider = StateProvider<bool>((ref) => false);
 enum SessionStatus { unknown, loggedOut, loggedIn }
 
 class SessionState {
-  const SessionState(this.status, [this.role]);
+  const SessionState(this.status, {this.kind, this.farmRole, this.farmName});
   final SessionStatus status;
-  final String? role; // farmer | vet
+  final String? kind; // user | doctor
+  final String? farmRole; // admin | farmer | doctor
+  final String? farmName;
 
-  bool get isFarmer => role == 'farmer';
-  bool get isVet => role == 'vet';
+  bool get isDoctor => kind == 'doctor';
+  bool get isAdmin => farmRole == 'admin';
+  bool get isFarmer => farmRole == 'farmer';
 }
 
 class SessionController extends Notifier<SessionState> {
@@ -50,40 +53,62 @@ class SessionController extends Notifier<SessionState> {
       state = const SessionState(SessionStatus.loggedOut);
       return;
     }
-    // Trust the stored role for an instant start (works offline); a later /me
-    // call in the app can refresh it if needed.
-    final role = await _store.readRole() ?? 'farmer';
-    state = SessionState(SessionStatus.loggedIn, role);
+    state = SessionState(
+      SessionStatus.loggedIn,
+      kind: await _store.readKind() ?? 'user',
+      farmRole: await _store.readFarmRole() ?? 'farmer',
+      farmName: await _store.readFarmName(),
+    );
   }
 
   Future<void> login(String phone, String password) async {
     final tokens = await _api.login(phone, password);
-    await _store.save(access: tokens.accessToken, refresh: tokens.refreshToken);
+    await _store.saveUser(access: tokens.accessToken, refresh: tokens.refreshToken);
     final me = await _api.me();
-    await _store.saveRole(me.role);
+    await _store.saveProfile(farmRole: me.farmRole, farmName: me.farm.name);
     _resetPaywall();
-    state = SessionState(SessionStatus.loggedIn, me.role);
+    state = SessionState(SessionStatus.loggedIn,
+        kind: 'user', farmRole: me.farmRole, farmName: me.farm.name);
   }
 
-  Future<void> register(String phone, String password, String role) async {
-    final tokens = await _api.register(phone, password, role);
-    await _store.save(access: tokens.accessToken, refresh: tokens.refreshToken, role: role);
+  /// Self-registration creates a farm; the user becomes its admin.
+  Future<void> register(String phone, String password, String farmName) async {
+    final tokens = await _api.register(phone, password, farmName);
+    await _store.saveUser(
+        access: tokens.accessToken,
+        refresh: tokens.refreshToken,
+        farmRole: 'admin',
+        farmName: farmName);
     _resetPaywall();
-    state = SessionState(SessionStatus.loggedIn, role);
+    state = SessionState(SessionStatus.loggedIn,
+        kind: 'user', farmRole: 'admin', farmName: farmName);
+  }
+
+  /// Doctor enters with a scanned QR invite secret — no account.
+  Future<void> redeemDoctor(String inviteToken) async {
+    final sess = await _api.redeemDoctor(inviteToken);
+    await _store.saveDoctor(
+      access: sess.accessToken,
+      inviteToken: inviteToken,
+      farmName: sess.farm.name,
+      doctorLabel: sess.doctorLabel,
+    );
+    _resetPaywall();
+    state = SessionState(SessionStatus.loggedIn,
+        kind: 'doctor', farmRole: 'doctor', farmName: sess.farm.name);
   }
 
   Future<void> logout() async {
-    try {
-      await _api.logout();
-    } catch (_) {
-      // best-effort; we clear locally regardless
+    if (!state.isDoctor) {
+      try {
+        await _api.logout();
+      } catch (_) {/* best-effort */}
     }
     await _store.clear();
     _resetPaywall();
     state = const SessionState(SessionStatus.loggedOut);
   }
 
-  /// Called by the dio interceptor when refresh fails (§6.2).
   Future<void> onExpired() async {
     await _store.clear();
     _resetPaywall();

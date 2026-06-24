@@ -12,13 +12,14 @@ import (
 )
 
 const createPayment = `-- name: CreatePayment :one
-INSERT INTO payments (user_id, plan, amount_egp, instapay_ref, screenshot_url)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at
+INSERT INTO payments (farm_id, created_by, plan, amount_egp, instapay_ref, screenshot_url)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at, farm_id, created_by
 `
 
 type CreatePaymentParams struct {
-	UserID        int32
+	FarmID        int32
+	CreatedBy     *int32
 	Plan          string
 	AmountEgp     string
 	InstapayRef   string
@@ -27,7 +28,8 @@ type CreatePaymentParams struct {
 
 func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error) {
 	row := q.db.QueryRow(ctx, createPayment,
-		arg.UserID,
+		arg.FarmID,
+		arg.CreatedBy,
 		arg.Plan,
 		arg.AmountEgp,
 		arg.InstapayRef,
@@ -36,7 +38,6 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 	var i Payment
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Plan,
 		&i.AmountEgp,
 		&i.InstapayRef,
@@ -46,12 +47,14 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		&i.ReviewedAt,
 		&i.Note,
 		&i.CreatedAt,
+		&i.FarmID,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const getPayment = `-- name: GetPayment :one
-SELECT id, user_id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at FROM payments WHERE id = $1
+SELECT id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at, farm_id, created_by FROM payments WHERE id = $1
 `
 
 func (q *Queries) GetPayment(ctx context.Context, id int32) (Payment, error) {
@@ -59,7 +62,6 @@ func (q *Queries) GetPayment(ctx context.Context, id int32) (Payment, error) {
 	var i Payment
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Plan,
 		&i.AmountEgp,
 		&i.InstapayRef,
@@ -69,12 +71,14 @@ func (q *Queries) GetPayment(ctx context.Context, id int32) (Payment, error) {
 		&i.ReviewedAt,
 		&i.Note,
 		&i.CreatedAt,
+		&i.FarmID,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const getPaymentByRef = `-- name: GetPaymentByRef :one
-SELECT id, user_id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at FROM payments WHERE instapay_ref = $1
+SELECT id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at, farm_id, created_by FROM payments WHERE instapay_ref = $1
 `
 
 func (q *Queries) GetPaymentByRef(ctx context.Context, instapayRef string) (Payment, error) {
@@ -82,7 +86,6 @@ func (q *Queries) GetPaymentByRef(ctx context.Context, instapayRef string) (Paym
 	var i Payment
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Plan,
 		&i.AmountEgp,
 		&i.InstapayRef,
@@ -92,12 +95,14 @@ func (q *Queries) GetPaymentByRef(ctx context.Context, instapayRef string) (Paym
 		&i.ReviewedAt,
 		&i.Note,
 		&i.CreatedAt,
+		&i.FarmID,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const listPayments = `-- name: ListPayments :many
-SELECT id, user_id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at FROM payments
+SELECT id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at, farm_id, created_by FROM payments
 WHERE ($1::text IS NULL OR status = $1::text)
   AND ($2::timestamptz IS NULL
        OR (created_at, id) < ($2::timestamptz, $3::int))
@@ -128,7 +133,6 @@ func (q *Queries) ListPayments(ctx context.Context, arg ListPaymentsParams) ([]P
 		var i Payment
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
 			&i.Plan,
 			&i.AmountEgp,
 			&i.InstapayRef,
@@ -138,6 +142,8 @@ func (q *Queries) ListPayments(ctx context.Context, arg ListPaymentsParams) ([]P
 			&i.ReviewedAt,
 			&i.Note,
 			&i.CreatedAt,
+			&i.FarmID,
+			&i.CreatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -149,25 +155,25 @@ func (q *Queries) ListPayments(ctx context.Context, arg ListPaymentsParams) ([]P
 	return items, nil
 }
 
-const listPaymentsByUser = `-- name: ListPaymentsByUser :many
-SELECT id, user_id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at FROM payments
-WHERE user_id = $1
+const listPaymentsByFarm = `-- name: ListPaymentsByFarm :many
+SELECT id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at, farm_id, created_by FROM payments
+WHERE farm_id = $1
   AND ($2::timestamptz IS NULL
        OR (created_at, id) < ($2::timestamptz, $3::int))
 ORDER BY created_at DESC, id DESC
 LIMIT $4::int
 `
 
-type ListPaymentsByUserParams struct {
-	UserID     int32
+type ListPaymentsByFarmParams struct {
+	FarmID     int32
 	CursorTime pgtype.Timestamptz
 	CursorID   int32
 	Lim        int32
 }
 
-func (q *Queries) ListPaymentsByUser(ctx context.Context, arg ListPaymentsByUserParams) ([]Payment, error) {
-	rows, err := q.db.Query(ctx, listPaymentsByUser,
-		arg.UserID,
+func (q *Queries) ListPaymentsByFarm(ctx context.Context, arg ListPaymentsByFarmParams) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, listPaymentsByFarm,
+		arg.FarmID,
 		arg.CursorTime,
 		arg.CursorID,
 		arg.Lim,
@@ -181,7 +187,6 @@ func (q *Queries) ListPaymentsByUser(ctx context.Context, arg ListPaymentsByUser
 		var i Payment
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
 			&i.Plan,
 			&i.AmountEgp,
 			&i.InstapayRef,
@@ -191,6 +196,8 @@ func (q *Queries) ListPaymentsByUser(ctx context.Context, arg ListPaymentsByUser
 			&i.ReviewedAt,
 			&i.Note,
 			&i.CreatedAt,
+			&i.FarmID,
+			&i.CreatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -206,7 +213,7 @@ const reviewPayment = `-- name: ReviewPayment :one
 UPDATE payments
 SET status = $1, reviewed_by = $2, reviewed_at = now(), note = $3
 WHERE id = $4 AND status = 'pending'
-RETURNING id, user_id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at
+RETURNING id, plan, amount_egp, instapay_ref, screenshot_url, status, reviewed_by, reviewed_at, note, created_at, farm_id, created_by
 `
 
 type ReviewPaymentParams struct {
@@ -227,7 +234,6 @@ func (q *Queries) ReviewPayment(ctx context.Context, arg ReviewPaymentParams) (P
 	var i Payment
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Plan,
 		&i.AmountEgp,
 		&i.InstapayRef,
@@ -237,6 +243,8 @@ func (q *Queries) ReviewPayment(ctx context.Context, arg ReviewPaymentParams) (P
 		&i.ReviewedAt,
 		&i.Note,
 		&i.CreatedAt,
+		&i.FarmID,
+		&i.CreatedBy,
 	)
 	return i, err
 }

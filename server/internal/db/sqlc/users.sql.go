@@ -23,19 +23,18 @@ func (q *Queries) ClearRefreshToken(ctx context.Context, id int32) error {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (phone_number, password, role)
-VALUES ($1, $2, $3)
-RETURNING id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, role, created_at
+INSERT INTO users (phone_number, password)
+VALUES ($1, $2)
+RETURNING id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, created_at
 `
 
 type CreateUserParams struct {
 	PhoneNumber string
 	Password    string
-	Role        string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.PhoneNumber, arg.Password, arg.Role)
+	row := q.db.QueryRow(ctx, createUser, arg.PhoneNumber, arg.Password)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -44,14 +43,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.RefreshToken,
 		&i.RefreshTokenExpiryTime,
 		&i.IsAdmin,
-		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, role, created_at FROM users WHERE id = $1
+SELECT id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, created_at FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int32) (User, error) {
@@ -64,14 +62,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int32) (User, error) {
 		&i.RefreshToken,
 		&i.RefreshTokenExpiryTime,
 		&i.IsAdmin,
-		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByPhone = `-- name: GetUserByPhone :one
-SELECT id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, role, created_at FROM users WHERE phone_number = $1
+SELECT id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, created_at FROM users WHERE phone_number = $1
 `
 
 func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User, error) {
@@ -84,14 +81,13 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User,
 		&i.RefreshToken,
 		&i.RefreshTokenExpiryTime,
 		&i.IsAdmin,
-		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByRefreshToken = `-- name: GetUserByRefreshToken :one
-SELECT id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, role, created_at FROM users
+SELECT id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, created_at FROM users
 WHERE refresh_token = $1
   AND refresh_token_expiry_time IS NOT NULL
   AND refresh_token_expiry_time > now()
@@ -107,7 +103,6 @@ func (q *Queries) GetUserByRefreshToken(ctx context.Context, refreshToken *strin
 		&i.RefreshToken,
 		&i.RefreshTokenExpiryTime,
 		&i.IsAdmin,
-		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -115,7 +110,7 @@ func (q *Queries) GetUserByRefreshToken(ctx context.Context, refreshToken *strin
 
 const setAdminByPhone = `-- name: SetAdminByPhone :one
 UPDATE users SET is_admin = TRUE WHERE phone_number = $1
-RETURNING id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, role, created_at
+RETURNING id, phone_number, password, refresh_token, refresh_token_expiry_time, is_admin, created_at
 `
 
 func (q *Queries) SetAdminByPhone(ctx context.Context, phoneNumber string) (User, error) {
@@ -128,7 +123,6 @@ func (q *Queries) SetAdminByPhone(ctx context.Context, phoneNumber string) (User
 		&i.RefreshToken,
 		&i.RefreshTokenExpiryTime,
 		&i.IsAdmin,
-		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err

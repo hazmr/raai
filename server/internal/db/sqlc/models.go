@@ -21,25 +21,52 @@ type AdminAudit struct {
 type Animal struct {
 	ID        int32
 	Barcode   string
-	UserID    int32
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+	FarmID    int32
 }
 
 type AnimalNote struct {
-	ID         int32
-	AnimalID   int32
-	Notes      string
-	AuthorID   int32
-	AuthorRole string
-	CreatedAt  pgtype.Timestamptz
-	UpdatedAt  pgtype.Timestamptz
-	VisitID    *int32
+	ID             int32
+	AnimalID       int32
+	Notes          string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	AuthorKind     string
+	AuthorUserID   *int32
+	AuthorInviteID *int32
+	AuthorLabel    string
+}
+
+type DoctorInvite struct {
+	ID          int32
+	FarmID      int32
+	Token       string
+	DoctorLabel string
+	Status      string
+	ExpiresAt   pgtype.Timestamptz
+	CreatedBy   *int32
+	CreatedAt   pgtype.Timestamptz
+	EndedAt     pgtype.Timestamptz
+	EndedBy     *int32
+}
+
+type Farm struct {
+	ID        int32
+	Name      string
+	CreatedAt pgtype.Timestamptz
+}
+
+type FarmMember struct {
+	ID        int32
+	FarmID    int32
+	UserID    int32
+	Role      string
+	CreatedAt pgtype.Timestamptz
 }
 
 type Payment struct {
 	ID            int32
-	UserID        int32
 	Plan          string
 	AmountEgp     string
 	InstapayRef   string
@@ -49,16 +76,18 @@ type Payment struct {
 	ReviewedAt    pgtype.Timestamptz
 	Note          *string
 	CreatedAt     pgtype.Timestamptz
+	FarmID        int32
+	CreatedBy     *int32
 }
 
 type Subscription struct {
 	ID               int32
-	UserID           int32
 	Plan             string
 	Status           string
 	CurrentPeriodEnd pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	FarmID           int32
 }
 
 type User struct {
@@ -68,17 +97,5 @@ type User struct {
 	RefreshToken           *string
 	RefreshTokenExpiryTime pgtype.Timestamptz
 	IsAdmin                bool
-	Role                   string
 	CreatedAt              pgtype.Timestamptz
-}
-
-type Visit struct {
-	ID            int32
-	FarmerID      int32
-	VetID         *int32
-	LocationType  string
-	LocationLabel *string
-	Status        string
-	OpenedAt      pgtype.Timestamptz
-	ClosedAt      pgtype.Timestamptz
 }

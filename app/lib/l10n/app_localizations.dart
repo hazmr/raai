@@ -126,7 +126,7 @@ abstract class L10n {
   /// No description provided for @roleFarmer.
   ///
   /// In en, this message translates to:
-  /// **'Farmer'**
+  /// **'Herder'**
   String get roleFarmer;
 
   /// No description provided for @roleVet.
@@ -266,6 +266,462 @@ abstract class L10n {
   /// In en, this message translates to:
   /// **'Loading…'**
   String get loading;
+
+  /// No description provided for @close.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get close;
+
+  /// No description provided for @searchByTag.
+  ///
+  /// In en, this message translates to:
+  /// **'Search by ear tag'**
+  String get searchByTag;
+
+  /// No description provided for @herdEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No animals yet'**
+  String get herdEmpty;
+
+  /// No description provided for @addAnimal.
+  ///
+  /// In en, this message translates to:
+  /// **'Add animal'**
+  String get addAnimal;
+
+  /// No description provided for @barcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Ear-tag number'**
+  String get barcode;
+
+  /// No description provided for @noteCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} notes'**
+  String noteCountLabel(int count);
+
+  /// No description provided for @notesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get notesTitle;
+
+  /// No description provided for @notesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No notes yet'**
+  String get notesEmpty;
+
+  /// No description provided for @addNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Add note'**
+  String get addNote;
+
+  /// No description provided for @vetBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Vet'**
+  String get vetBadge;
+
+  /// No description provided for @noteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write the note'**
+  String get noteHint;
+
+  /// No description provided for @send.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get send;
+
+  /// No description provided for @tplVaccination.
+  ///
+  /// In en, this message translates to:
+  /// **'Vaccination'**
+  String get tplVaccination;
+
+  /// No description provided for @tplCheckup.
+  ///
+  /// In en, this message translates to:
+  /// **'Checkup'**
+  String get tplCheckup;
+
+  /// No description provided for @tplTreatment.
+  ///
+  /// In en, this message translates to:
+  /// **'Treatment'**
+  String get tplTreatment;
+
+  /// No description provided for @tplBirth.
+  ///
+  /// In en, this message translates to:
+  /// **'Birth'**
+  String get tplBirth;
+
+  /// No description provided for @scanManualTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter ear-tag number'**
+  String get scanManualTitle;
+
+  /// No description provided for @scanLookup.
+  ///
+  /// In en, this message translates to:
+  /// **'Look up'**
+  String get scanLookup;
+
+  /// No description provided for @animalNotFoundAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag not found. Add this animal?'**
+  String get animalNotFoundAdd;
+
+  /// No description provided for @scanHoldSteady.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold steady on the code'**
+  String get scanHoldSteady;
+
+  /// No description provided for @scanMultiple.
+  ///
+  /// In en, this message translates to:
+  /// **'More than one tag in view — move closer to just one'**
+  String get scanMultiple;
+
+  /// No description provided for @scanConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm this tag'**
+  String get scanConfirmTitle;
+
+  /// No description provided for @scanInHerd.
+  ///
+  /// In en, this message translates to:
+  /// **'In your herd'**
+  String get scanInHerd;
+
+  /// No description provided for @scanNotInHerd.
+  ///
+  /// In en, this message translates to:
+  /// **'Not in your herd'**
+  String get scanNotInHerd;
+
+  /// No description provided for @scanCheckNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Check it matches the number printed on the tag'**
+  String get scanCheckNumber;
+
+  /// No description provided for @open.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get open;
+
+  /// No description provided for @rescan.
+  ///
+  /// In en, this message translates to:
+  /// **'Rescan'**
+  String get rescan;
+
+  /// No description provided for @visitsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Visits'**
+  String get visitsTitle;
+
+  /// No description provided for @locationType.
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get locationType;
+
+  /// No description provided for @locClinic.
+  ///
+  /// In en, this message translates to:
+  /// **'Clinic'**
+  String get locClinic;
+
+  /// No description provided for @locFarm.
+  ///
+  /// In en, this message translates to:
+  /// **'Farm'**
+  String get locFarm;
+
+  /// No description provided for @locationLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Location label (optional)'**
+  String get locationLabel;
+
+  /// No description provided for @vetPhone.
+  ///
+  /// In en, this message translates to:
+  /// **'Vet phone (optional)'**
+  String get vetPhone;
+
+  /// No description provided for @openVisit.
+  ///
+  /// In en, this message translates to:
+  /// **'Open visit'**
+  String get openVisit;
+
+  /// No description provided for @closeVisit.
+  ///
+  /// In en, this message translates to:
+  /// **'Close visit'**
+  String get closeVisit;
+
+  /// No description provided for @visitsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No visits'**
+  String get visitsEmpty;
+
+  /// No description provided for @openVisitsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No open visits'**
+  String get openVisitsEmpty;
+
+  /// No description provided for @visitOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get visitOpen;
+
+  /// No description provided for @visitClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get visitClosed;
+
+  /// No description provided for @visitAnimals.
+  ///
+  /// In en, this message translates to:
+  /// **'Visit animals'**
+  String get visitAnimals;
+
+  /// No description provided for @farmName.
+  ///
+  /// In en, this message translates to:
+  /// **'Farm name'**
+  String get farmName;
+
+  /// No description provided for @enterAsDoctor.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter as a doctor (scan visit QR)'**
+  String get enterAsDoctor;
+
+  /// No description provided for @doctorScanTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the visit QR'**
+  String get doctorScanTitle;
+
+  /// No description provided for @tileFarmers.
+  ///
+  /// In en, this message translates to:
+  /// **'Farmers'**
+  String get tileFarmers;
+
+  /// No description provided for @tileDoctors.
+  ///
+  /// In en, this message translates to:
+  /// **'Doctor visits'**
+  String get tileDoctors;
+
+  /// No description provided for @addFarmer.
+  ///
+  /// In en, this message translates to:
+  /// **'Add farmer'**
+  String get addFarmer;
+
+  /// No description provided for @tempPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Temporary password'**
+  String get tempPassword;
+
+  /// No description provided for @remove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get remove;
+
+  /// No description provided for @roleAdmin.
+  ///
+  /// In en, this message translates to:
+  /// **'Admin'**
+  String get roleAdmin;
+
+  /// No description provided for @membersEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No farmers yet'**
+  String get membersEmpty;
+
+  /// No description provided for @newDoctorVisit.
+  ///
+  /// In en, this message translates to:
+  /// **'New doctor visit'**
+  String get newDoctorVisit;
+
+  /// No description provided for @doctorName.
+  ///
+  /// In en, this message translates to:
+  /// **'Doctor name'**
+  String get doctorName;
+
+  /// No description provided for @createInvite.
+  ///
+  /// In en, this message translates to:
+  /// **'Create visit QR'**
+  String get createInvite;
+
+  /// No description provided for @inviteShowQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Show this QR to the doctor'**
+  String get inviteShowQr;
+
+  /// No description provided for @inviteScanHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The doctor opens the app, taps \"I\'m a doctor\", and scans it'**
+  String get inviteScanHint;
+
+  /// No description provided for @endAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'End access'**
+  String get endAccess;
+
+  /// No description provided for @inviteActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get inviteActive;
+
+  /// No description provided for @inviteEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Ended'**
+  String get inviteEnded;
+
+  /// No description provided for @invitesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No doctor visits yet'**
+  String get invitesEmpty;
+
+  /// No description provided for @doctorBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Doctor'**
+  String get doctorBadge;
+
+  /// No description provided for @notesWritten.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} notes'**
+  String notesWritten(int count);
+
+  /// No description provided for @confirmRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this farmer?'**
+  String get confirmRemove;
+
+  /// No description provided for @confirmEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End this doctor\'s access?'**
+  String get confirmEnd;
+
+  /// No description provided for @choosePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a plan'**
+  String get choosePlan;
+
+  /// No description provided for @planMonthly.
+  ///
+  /// In en, this message translates to:
+  /// **'Monthly'**
+  String get planMonthly;
+
+  /// No description provided for @planYearly.
+  ///
+  /// In en, this message translates to:
+  /// **'Yearly'**
+  String get planYearly;
+
+  /// No description provided for @amountEgp.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} EGP'**
+  String amountEgp(int amount);
+
+  /// No description provided for @payToLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Send to'**
+  String get payToLabel;
+
+  /// No description provided for @copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get copy;
+
+  /// No description provided for @copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get copied;
+
+  /// No description provided for @paywallStep.
+  ///
+  /// In en, this message translates to:
+  /// **'Send the amount on InstaPay, then paste the reference'**
+  String get paywallStep;
+
+  /// No description provided for @referenceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Reference number'**
+  String get referenceLabel;
+
+  /// No description provided for @screenshotOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot URL (optional)'**
+  String get screenshotOptional;
+
+  /// No description provided for @submitPayment.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit for review'**
+  String get submitPayment;
+
+  /// No description provided for @underReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Under review'**
+  String get underReview;
+
+  /// No description provided for @underReviewBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your subscription activates once the transfer is confirmed'**
+  String get underReviewBody;
 
   /// No description provided for @errOffline.
   ///

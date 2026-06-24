@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (phone_number, password, role)
-VALUES (@phone_number, @password, @role)
+INSERT INTO users (phone_number, password)
+VALUES (@phone_number, @password)
 RETURNING *;
 
 -- name: GetUserByID :one

@@ -9,10 +9,9 @@ import (
 )
 
 // Gate is the subscription paywall (§7.2). It runs after auth on protected routes
-// and keys off the owning farmer:
-//   - a farmer caller must have an active subscription, else 402;
-//   - a vet caller passes through here (they own nothing) — the per-farmer check
-//     happens in the handlers, where the visit reveals which farmer's herd is touched.
+// and keys off the caller's FARM: if the farm's subscription is inactive, nobody
+// touching its herd gets through — neither members nor invited doctors. Billing,
+// auth, and /me are mounted outside the gate so an unpaid admin can still pay.
 type Gate struct {
 	q *sqlc.Queries
 }
@@ -26,11 +25,7 @@ func (g *Gate) Middleware(next http.Handler) http.Handler {
 			httpx.WriteError(w, r, httpx.ErrUnauthorized("authentication required"))
 			return
 		}
-		if id.Role == auth.RoleVet {
-			next.ServeHTTP(w, r) // farmer-scoped check happens in the handler
-			return
-		}
-		active, err := g.q.IsSubscriptionActive(r.Context(), id.UserID)
+		active, err := g.q.IsSubscriptionActive(r.Context(), id.FarmID)
 		if err != nil {
 			httpx.WriteError(w, r, err)
 			return

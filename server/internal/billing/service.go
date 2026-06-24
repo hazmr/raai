@@ -63,8 +63,8 @@ type StatusResponse struct {
 	CurrentPeriodEnd *time.Time `json:"currentPeriodEnd"`
 }
 
-func (s *Service) Status(ctx context.Context, uid int32) (StatusResponse, error) {
-	sub, err := s.q.GetSubscription(ctx, uid)
+func (s *Service) Status(ctx context.Context, farmID int32) (StatusResponse, error) {
+	sub, err := s.q.GetSubscription(ctx, farmID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StatusResponse{Status: "none"}, nil
@@ -121,7 +121,7 @@ func ToPaymentDTO(p sqlc.Payment) PaymentDTO {
 // SubmitPayment records a claimed InstaPay transfer as a pending payment (§7.4).
 // Dedupe is by instapay_ref: a re-submit by the same user returns the existing
 // row (idempotent); a different user's reused ref is a 409.
-func (s *Service) SubmitPayment(ctx context.Context, uid int32, plan, instapayRef string, amountEGP float64, screenshotURL *string) (PaymentDTO, error) {
+func (s *Service) SubmitPayment(ctx context.Context, farmID, createdBy int32, plan, instapayRef string, amountEGP float64, screenshotURL *string) (PaymentDTO, error) {
 	if _, ok := PlanMonths(plan); !ok {
 		return PaymentDTO{}, httpx.ErrValidation("invalid plan", map[string]string{"plan": "must be 'monthly' or 'yearly'"})
 	}
@@ -133,7 +133,8 @@ func (s *Service) SubmitPayment(ctx context.Context, uid int32, plan, instapayRe
 	}
 
 	p, err := s.q.CreatePayment(ctx, sqlc.CreatePaymentParams{
-		UserID:        uid,
+		FarmID:        farmID,
+		CreatedBy:     &createdBy,
 		Plan:          plan,
 		AmountEgp:     strconv.FormatFloat(amountEGP, 'f', 2, 64),
 		InstapayRef:   instapayRef,
@@ -142,7 +143,7 @@ func (s *Service) SubmitPayment(ctx context.Context, uid int32, plan, instapayRe
 	if err != nil {
 		if db.IsUniqueViolation(err) {
 			existing, gerr := s.q.GetPaymentByRef(ctx, instapayRef)
-			if gerr == nil && existing.UserID == uid {
+			if gerr == nil && existing.FarmID == farmID {
 				return ToPaymentDTO(existing), nil // idempotent re-submit
 			}
 			return PaymentDTO{}, httpx.ErrConflict("this InstaPay reference has already been submitted")
@@ -151,15 +152,15 @@ func (s *Service) SubmitPayment(ctx context.Context, uid int32, plan, instapayRe
 	}
 
 	// Surface "under review" without granting access (§7.4 step 3).
-	if err := s.q.MarkPendingSubscription(ctx, sqlc.MarkPendingSubscriptionParams{UserID: uid, Plan: plan}); err != nil {
+	if err := s.q.MarkPendingSubscription(ctx, sqlc.MarkPendingSubscriptionParams{FarmID: farmID, Plan: plan}); err != nil {
 		return PaymentDTO{}, err
 	}
 	return ToPaymentDTO(p), nil
 }
 
-func (s *Service) ListUserPayments(ctx context.Context, uid int32, page httpx.Page) (httpx.List[PaymentDTO], error) {
-	rows, err := s.q.ListPaymentsByUser(ctx, sqlc.ListPaymentsByUserParams{
-		UserID:     uid,
+func (s *Service) ListFarmPayments(ctx context.Context, farmID int32, page httpx.Page) (httpx.List[PaymentDTO], error) {
+	rows, err := s.q.ListPaymentsByFarm(ctx, sqlc.ListPaymentsByFarmParams{
+		FarmID:     farmID,
 		CursorTime: page.CursorTime(),
 		CursorID:   page.CursorID(),
 		Lim:        page.Limit,

@@ -73,9 +73,12 @@ class DioClient {
   Completer<bool>? _refreshing;
 
   bool _isRefreshCall(DioException e) =>
-      e.requestOptions.path.contains('/auth/refresh');
+      e.requestOptions.path.contains('/auth/refresh') ||
+      e.requestOptions.path.contains('/doctor/redeem');
 
-  /// Refreshes the access token, coalescing concurrent 401s into one call.
+  /// Refreshes the access token, coalescing concurrent 401s into one call. A user
+  /// rotates via /auth/refresh; a doctor re-redeems the stored invite secret (an
+  /// ended invite makes this fail → session ends).
   Future<bool> _tryRefresh() {
     if (_refreshing != null) return _refreshing!.future;
     final completer = Completer<bool>();
@@ -83,6 +86,18 @@ class DioClient {
 
     () async {
       try {
+        final kind = await tokens.readKind();
+        if (kind == 'doctor') {
+          final invite = await tokens.readInviteToken();
+          if (invite == null) {
+            completer.complete(false);
+            return;
+          }
+          final resp = await _refreshDio.post('/doctor/redeem', data: {'token': invite});
+          await tokens.saveAccess((resp.data as Map)['accessToken'] as String);
+          completer.complete(true);
+          return;
+        }
         final refresh = await tokens.readRefresh();
         if (refresh == null) {
           completer.complete(false);
@@ -90,7 +105,7 @@ class DioClient {
         }
         final resp = await _refreshDio.post('/auth/refresh', data: {'refreshToken': refresh});
         final data = resp.data as Map;
-        await tokens.save(
+        await tokens.saveUser(
           access: data['accessToken'] as String,
           refresh: data['refreshToken'] as String,
         );

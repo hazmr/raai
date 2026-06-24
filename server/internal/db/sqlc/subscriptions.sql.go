@@ -26,54 +26,54 @@ func (q *Queries) ExpireSubscriptions(ctx context.Context) (int64, error) {
 }
 
 const extendSubscription = `-- name: ExtendSubscription :one
-INSERT INTO subscriptions (user_id, plan, status, current_period_end, updated_at)
+INSERT INTO subscriptions (farm_id, plan, status, current_period_end, updated_at)
 VALUES ($1, $2, 'active', now() + make_interval(months => $3::int), now())
-ON CONFLICT (user_id) DO UPDATE
+ON CONFLICT (farm_id) DO UPDATE
 SET current_period_end = GREATEST(COALESCE(subscriptions.current_period_end, now()), now())
                          + make_interval(months => $3::int),
     plan = EXCLUDED.plan,
     status = 'active',
     updated_at = now()
-RETURNING id, user_id, plan, status, current_period_end, created_at, updated_at
+RETURNING id, plan, status, current_period_end, created_at, updated_at, farm_id
 `
 
 type ExtendSubscriptionParams struct {
-	UserID    int32
+	FarmID    int32
 	Plan      string
 	AddMonths int32
 }
 
 // Extends the period from max(now(), current_period_end) so early renewals stack (§7.4.5).
 func (q *Queries) ExtendSubscription(ctx context.Context, arg ExtendSubscriptionParams) (Subscription, error) {
-	row := q.db.QueryRow(ctx, extendSubscription, arg.UserID, arg.Plan, arg.AddMonths)
+	row := q.db.QueryRow(ctx, extendSubscription, arg.FarmID, arg.Plan, arg.AddMonths)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Plan,
 		&i.Status,
 		&i.CurrentPeriodEnd,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FarmID,
 	)
 	return i, err
 }
 
 const getSubscription = `-- name: GetSubscription :one
-SELECT id, user_id, plan, status, current_period_end, created_at, updated_at FROM subscriptions WHERE user_id = $1
+SELECT id, plan, status, current_period_end, created_at, updated_at, farm_id FROM subscriptions WHERE farm_id = $1
 `
 
-func (q *Queries) GetSubscription(ctx context.Context, userID int32) (Subscription, error) {
-	row := q.db.QueryRow(ctx, getSubscription, userID)
+func (q *Queries) GetSubscription(ctx context.Context, farmID int32) (Subscription, error) {
+	row := q.db.QueryRow(ctx, getSubscription, farmID)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Plan,
 		&i.Status,
 		&i.CurrentPeriodEnd,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FarmID,
 	)
 	return i, err
 }
@@ -81,23 +81,23 @@ func (q *Queries) GetSubscription(ctx context.Context, userID int32) (Subscripti
 const isSubscriptionActive = `-- name: IsSubscriptionActive :one
 SELECT EXISTS (
     SELECT 1 FROM subscriptions
-    WHERE user_id = $1
+    WHERE farm_id = $1
       AND current_period_end IS NOT NULL
       AND current_period_end > now()
 ) AS active
 `
 
-func (q *Queries) IsSubscriptionActive(ctx context.Context, userID int32) (bool, error) {
-	row := q.db.QueryRow(ctx, isSubscriptionActive, userID)
+func (q *Queries) IsSubscriptionActive(ctx context.Context, farmID int32) (bool, error) {
+	row := q.db.QueryRow(ctx, isSubscriptionActive, farmID)
 	var active bool
 	err := row.Scan(&active)
 	return active, err
 }
 
 const markPendingSubscription = `-- name: MarkPendingSubscription :exec
-INSERT INTO subscriptions (user_id, plan, status, updated_at)
+INSERT INTO subscriptions (farm_id, plan, status, updated_at)
 VALUES ($1, $2, 'pending', now())
-ON CONFLICT (user_id) DO UPDATE
+ON CONFLICT (farm_id) DO UPDATE
 SET status = CASE
         WHEN subscriptions.current_period_end IS NOT NULL
              AND subscriptions.current_period_end > now() THEN subscriptions.status
@@ -108,35 +108,35 @@ SET status = CASE
 `
 
 type MarkPendingSubscriptionParams struct {
-	UserID int32
+	FarmID int32
 	Plan   string
 }
 
 // Surfaces "under review" in the UI without granting access (§7.4 step 3).
 func (q *Queries) MarkPendingSubscription(ctx context.Context, arg MarkPendingSubscriptionParams) error {
-	_, err := q.db.Exec(ctx, markPendingSubscription, arg.UserID, arg.Plan)
+	_, err := q.db.Exec(ctx, markPendingSubscription, arg.FarmID, arg.Plan)
 	return err
 }
 
 const revokeSubscription = `-- name: RevokeSubscription :one
-INSERT INTO subscriptions (user_id, plan, status, current_period_end, updated_at)
+INSERT INTO subscriptions (farm_id, plan, status, current_period_end, updated_at)
 VALUES ($1, 'monthly', 'expired', now(), now())
-ON CONFLICT (user_id) DO UPDATE
+ON CONFLICT (farm_id) DO UPDATE
 SET status = 'expired', current_period_end = now(), updated_at = now()
-RETURNING id, user_id, plan, status, current_period_end, created_at, updated_at
+RETURNING id, plan, status, current_period_end, created_at, updated_at, farm_id
 `
 
-func (q *Queries) RevokeSubscription(ctx context.Context, userID int32) (Subscription, error) {
-	row := q.db.QueryRow(ctx, revokeSubscription, userID)
+func (q *Queries) RevokeSubscription(ctx context.Context, farmID int32) (Subscription, error) {
+	row := q.db.QueryRow(ctx, revokeSubscription, farmID)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Plan,
 		&i.Status,
 		&i.CurrentPeriodEnd,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FarmID,
 	)
 	return i, err
 }

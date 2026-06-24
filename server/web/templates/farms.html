@@ -1,0 +1,25 @@
+{{define "title"}}Farms · Raai Admin{{end}}
+{{define "content"}}
+<h1>Farms</h1>
+<form method="get" action="/admin/farms" class="row">
+  <input name="q" value="{{.Data.Q}}" placeholder="Search by farm name">
+  <button type="submit">Search</button>
+</form>
+<table>
+  <thead><tr><th>Farm</th><th>Members</th><th>Plan</th><th>Status</th><th>Period end</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Rows}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td>{{.Members}}</td>
+      <td>{{.Plan}}</td>
+      <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+      <td class="muted">{{.PeriodEnd}}</td>
+      <td><a href="/admin/farms/{{.ID}}">manage</a></td>
+    </tr>
+  {{else}}
+    <tr><td colspan="6" class="muted">No farms.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}

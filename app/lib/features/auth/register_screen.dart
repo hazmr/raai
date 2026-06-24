@@ -8,6 +8,9 @@ import '../../core/auth/session.dart';
 import '../../core/theme.dart';
 import '../../l10n/app_localizations.dart';
 
+/// Sign-up is **farmer-only**: only a herder (راعي) — the herd owner who pays —
+/// can self-register. Vet accounts are provisioned out-of-band (admin), never
+/// through the app, so there is no role toggle here.
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
 
@@ -18,8 +21,8 @@ class RegisterScreen extends ConsumerStatefulWidget {
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _phone = TextEditingController();
   final _password = TextEditingController();
+  final _farmName = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  String _role = 'farmer';
   bool _busy = false;
   String? _phoneError; // inline 409 (phone already registered)
 
@@ -27,6 +30,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   void dispose() {
     _phone.dispose();
     _password.dispose();
+    _farmName.dispose();
     super.dispose();
   }
 
@@ -39,7 +43,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       await ref.read(sessionControllerProvider.notifier).register(
             _phone.text.trim(),
             _password.text,
-            _role,
+            _farmName.text.trim(),
           );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -79,16 +83,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   decoration: InputDecoration(labelText: t.password),
                   validator: (v) => (v == null || v.length < 6) ? t.passwordTooShort : null,
                 ),
-                const SizedBox(height: AppTokens.s16),
-                Text(t.roleQuestion, style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: AppTokens.s8),
-                SegmentedButton<String>(
-                  segments: [
-                    ButtonSegment(value: 'farmer', label: Text(t.roleFarmer), icon: const Icon(Icons.agriculture)),
-                    ButtonSegment(value: 'vet', label: Text(t.roleVet), icon: const Icon(Icons.medical_services)),
-                  ],
-                  selected: {_role},
-                  onSelectionChanged: (s) => setState(() => _role = s.first),
+                const SizedBox(height: AppTokens.s12),
+                TextFormField(
+                  controller: _farmName,
+                  decoration: InputDecoration(labelText: t.farmName),
+                  validator: (v) => (v == null || v.trim().isEmpty) ? t.fieldRequired : null,
                 ),
                 const SizedBox(height: AppTokens.s24),
                 FilledButton(

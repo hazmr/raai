@@ -5,13 +5,24 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/api/error_text.dart';
 import '../../core/api/models.dart';
-import '../../core/auth/session.dart';
+import '../../core/sync/providers.dart';
 import '../../core/theme.dart';
 import '../../core/widgets/states.dart';
+import '../../core/widgets/sync_banner.dart';
 import '../../l10n/app_localizations.dart';
 
-/// Herd list (§5.3): cursor-paginated, infinite scroll, search by ear tag
-/// (`?barcode=`). Plain rows — tag + note count. FAB adds an animal.
+/// What the search box currently holds; the herd stream re-runs as it changes.
+final _queryProvider = StateProvider.autoDispose<String>((ref) => '');
+
+/// The herd, straight from SQLite (§7) — it renders with no signal and updates
+/// itself the moment a sync writes new rows.
+final _herdProvider = StreamProvider.autoDispose<List<Animal>>((ref) {
+  final query = ref.watch(_queryProvider);
+  return ref.watch(herdRepositoryProvider).watchAnimals(query: query);
+});
+
+/// Herd list (§5.3): local-first, searchable by ear tag, pull-to-refresh pulls
+/// from the server. Rows still waiting in the outbox are marked.
 class AnimalsScreen extends ConsumerStatefulWidget {
   const AnimalsScreen({super.key});
 
@@ -20,103 +31,61 @@ class AnimalsScreen extends ConsumerStatefulWidget {
 }
 
 class _AnimalsScreenState extends ConsumerState<AnimalsScreen> {
-  final _scroll = ScrollController();
   final _search = TextEditingController();
-  final List<Animal> _items = [];
-  String _query = '';
-  String? _cursor;
-  bool _hasMore = true;
-  bool _loading = false;
-  bool _firstLoad = true;
-  ApiException? _error;
+  bool _refreshing = false;
 
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
-    _loadMore();
+    // Fetch in the background; whatever is cached is already on screen.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh(silent: true));
   }
 
   @override
   void dispose() {
-    _scroll.dispose();
     _search.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 300) {
-      _loadMore();
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_loading || !_hasMore) return;
-    setState(() => _loading = true);
-    final q = _query;
+  Future<void> _refresh({bool silent = false}) async {
+    if (_refreshing) return;
+    _refreshing = true;
     try {
-      final page = await ref.read(apiProvider).animals(
-            cursor: _cursor,
-            barcode: q.isEmpty ? null : q,
-          );
-      if (!mounted || q != _query) return; // search moved on — drop stale page
-      setState(() {
-        _items.addAll(page.data);
-        _cursor = page.nextCursor;
-        _hasMore = page.nextCursor != null;
-        _error = null;
-      });
+      await ref.read(syncServiceProvider).drain();
+      await ref.read(herdRepositoryProvider).refreshHerd();
     } on ApiException catch (e) {
-      if (mounted && q == _query) setState(() => _error = e);
+      if (!mounted || silent) return;
+      final t = L10n.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.isOffline ? t.showingSavedData : errorText(t, e)),
+      ));
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _firstLoad = false;
-        });
-      }
+      _refreshing = false;
     }
-  }
-
-  Future<void> _reload() async {
-    setState(() {
-      _items.clear();
-      _cursor = null;
-      _hasMore = true;
-      _firstLoad = true;
-      _error = null;
-    });
-    await _loadMore();
-  }
-
-  void _onSearchChanged(String value) {
-    _query = value.trim();
-    _reload();
-  }
-
-  Future<void> _addAnimal() async {
-    final created = await context.push<bool>('/animals/new');
-    if (created == true) _reload();
   }
 
   @override
   Widget build(BuildContext context) {
     final t = L10n.of(context);
+    final herd = ref.watch(_herdProvider);
+
     return Scaffold(
       appBar: AppBar(title: Text(t.tileHerd)),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addAnimal,
+        onPressed: () => context.push('/animals/new'),
         icon: const Icon(Icons.add),
         label: Text(t.addAnimal),
       ),
       body: SafeArea(
         child: Column(
           children: [
+            const SyncBanner(),
             Padding(
               padding: const EdgeInsets.all(AppTokens.s16),
               child: TextField(
                 controller: _search,
-                onChanged: _onSearchChanged,
+                onChanged: (v) =>
+                    ref.read(_queryProvider.notifier).state = v.trim(),
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   hintText: t.searchByTag,
@@ -124,49 +93,62 @@ class _AnimalsScreenState extends ConsumerState<AnimalsScreen> {
                 ),
               ),
             ),
-            Expanded(child: _list(t)),
+            Expanded(
+              child: herd.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => ErrorRetry(
+                  message: t.errGeneric,
+                  onRetry: () => ref.invalidate(_herdProvider),
+                ),
+                data: (animals) => RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: animals.isEmpty
+                      ? EmptyState(message: t.herdEmpty, icon: Icons.pets_outlined)
+                      : ListView.separated(
+                          padding: const EdgeInsets.only(bottom: 96),
+                          itemCount: animals.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, i) =>
+                              _AnimalRow(animal: animals[i]),
+                        ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _list(L10n t) {
-    if (_firstLoad && _loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_firstLoad && _error != null) {
-      return ErrorRetry(message: errorText(t, _error!), onRetry: _reload);
-    }
-    return RefreshIndicator(
-      onRefresh: _reload,
-      child: _items.isEmpty
-          ? EmptyState(message: t.herdEmpty, icon: Icons.pets_outlined)
-          : ListView.separated(
-              controller: _scroll,
-              padding: const EdgeInsets.only(bottom: 96),
-              itemCount: _items.length + (_hasMore ? 1 : 0),
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, i) {
-                if (i >= _items.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(AppTokens.s16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                final a = _items[i];
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: AppTokens.s16, vertical: AppTokens.s8),
-                  leading: const Icon(Icons.pets, color: AppTokens.primary),
-                  title: Text(a.barcode,
-                      style: Theme.of(context).textTheme.bodyLarge),
-                  subtitle: Text(t.noteCountLabel(a.noteCount)),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/animals/${a.id}', extra: a),
-                );
-              },
-            ),
+class _AnimalRow extends StatelessWidget {
+  const _AnimalRow({required this.animal});
+  final Animal animal;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = L10n.of(context);
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s16, vertical: AppTokens.s8),
+      leading: const Icon(Icons.pets, color: AppTokens.primary),
+      title: Text(animal.barcode, style: Theme.of(context).textTheme.bodyLarge),
+      subtitle: Row(
+        children: [
+          Text(t.noteCountLabel(animal.noteCount)),
+          if (animal.pending) ...[
+            const SizedBox(width: AppTokens.s8),
+            const Icon(Icons.cloud_upload_outlined,
+                size: 14, color: AppTokens.textSecondary),
+            const SizedBox(width: AppTokens.s4),
+            Text(t.notSentYet,
+                style: const TextStyle(
+                    fontSize: 12, color: AppTokens.textSecondary)),
+          ],
+        ],
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => context.push('/animals/${animal.localId}', extra: animal),
     );
   }
 }

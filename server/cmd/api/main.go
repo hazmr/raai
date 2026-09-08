@@ -19,6 +19,7 @@ import (
 	"raai/internal/config"
 	"raai/internal/db"
 	"raai/internal/db/sqlc"
+	"raai/internal/idempotency"
 	"raai/internal/server"
 )
 
@@ -103,7 +104,8 @@ func serve() error {
 	}
 }
 
-// expirySweep flips lapsed subscriptions to expired so the gate returns 402 (§7.6).
+// expirySweep flips lapsed subscriptions to expired so the gate returns 402 (§7.6),
+// and drops idempotency keys past their replay window (§6.1).
 func expirySweep(ctx context.Context, q *sqlc.Queries) {
 	tick := time.NewTicker(time.Hour)
 	defer tick.Stop()
@@ -112,6 +114,11 @@ func expirySweep(ctx context.Context, q *sqlc.Queries) {
 			slog.Error("expiry sweep failed", "err", err)
 		} else if n > 0 {
 			slog.Info("expiry sweep", "expired", n)
+		}
+		if n, err := q.PurgeIdempotencyKeys(ctx, idempotency.ReplayWindowHours); err != nil {
+			slog.Error("idempotency purge failed", "err", err)
+		} else if n > 0 {
+			slog.Info("idempotency purge", "removed", n)
 		}
 		select {
 		case <-ctx.Done():

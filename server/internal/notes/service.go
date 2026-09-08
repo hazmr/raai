@@ -23,14 +23,14 @@ func NewService(q *sqlc.Queries) *Service { return &Service{q: q} }
 // DTO is the §6.5 Note shape; the DB column `notes` is exposed as `body`.
 // authorKind (member|doctor) + authorLabel let the UI badge a doctor's note.
 type DTO struct {
-	ID         int32     `json:"id"`
-	AnimalID   int32     `json:"animalId"`
-	Body       string    `json:"body"`
-	AuthorKind string    `json:"authorKind"`
-	AuthorLabel string   `json:"authorLabel"`
-	InviteID   *int32    `json:"inviteId"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID          int32     `json:"id"`
+	AnimalID    int32     `json:"animalId"`
+	Body        string    `json:"body"`
+	AuthorKind  string    `json:"authorKind"`
+	AuthorLabel string    `json:"authorLabel"`
+	InviteID    *int32    `json:"inviteId"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 func toDTO(n sqlc.AnimalNote) DTO {

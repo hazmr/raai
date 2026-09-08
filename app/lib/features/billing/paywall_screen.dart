@@ -203,7 +203,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       padding: const EdgeInsets.only(bottom: AppTokens.s8),
       child: Material(
         color: selected
-            ? AppTokens.primary.withOpacity(0.08)
+            ? AppTokens.primary.withValues(alpha: 0.08)
             : AppTokens.surface,
         borderRadius: BorderRadius.circular(AppTokens.rControl),
         child: InkWell(

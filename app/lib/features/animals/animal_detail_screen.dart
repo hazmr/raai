@@ -5,16 +5,30 @@ import 'package:intl/intl.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/api/error_text.dart';
 import '../../core/api/models.dart';
-import '../../core/auth/session.dart';
+import '../../core/sync/providers.dart';
 import '../../core/theme.dart';
 import '../../core/widgets/states.dart';
+import '../../core/widgets/sync_banner.dart';
 import '../../l10n/app_localizations.dart';
 import '../notes/add_note_sheet.dart';
 
-/// Animal detail: header (ear tag) + a newest-first notes timeline (§5.3).
-/// A vet's note is badged. The FAB opens the add-note sheet (§5.5).
+final _animalProvider =
+    StreamProvider.autoDispose.family<Animal?, int>((ref, localId) {
+  return ref.watch(herdRepositoryProvider).watchAnimal(localId);
+});
+
+final _notesProvider =
+    StreamProvider.autoDispose.family<List<Note>, int>((ref, localId) {
+  return ref.watch(herdRepositoryProvider).watchNotes(localId);
+});
+
+/// Animal detail: ear-tag header + a newest-first notes timeline (§5.3), read
+/// from the local cache so it opens instantly in the field. A doctor's note is
+/// badged; a note still in the outbox is marked "not sent yet".
 class AnimalDetailScreen extends ConsumerStatefulWidget {
   const AnimalDetailScreen({super.key, required this.animalId, this.initial});
+
+  /// The animal's **local** id — an ear tag registered offline has no server id.
   final int animalId;
   final Animal? initial; // passed via go_router `extra` for an instant header
 
@@ -23,127 +37,75 @@ class AnimalDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _AnimalDetailScreenState extends ConsumerState<AnimalDetailScreen> {
-  final _scroll = ScrollController();
-  final List<Note> _notes = [];
-  Animal? _animal;
-  String? _cursor;
-  bool _hasMore = true;
-  bool _loading = false;
-  bool _firstLoad = true;
-  ApiException? _error;
-
   @override
   void initState() {
     super.initState();
-    _animal = widget.initial;
-    _scroll.addListener(_onScroll);
-    _loadAnimalIfNeeded();
-    _loadMore();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh(silent: true));
   }
 
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 300) {
-      _loadMore();
-    }
-  }
-
-  Future<void> _loadAnimalIfNeeded() async {
-    if (_animal != null) return;
+  Future<void> _refresh({bool silent = false}) async {
     try {
-      final a = await ref.read(apiProvider).animal(widget.animalId);
-      if (mounted) setState(() => _animal = a);
-    } on ApiException {
-      // Header just stays minimal; the notes list surfaces any real error.
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_loading || !_hasMore) return;
-    setState(() => _loading = true);
-    try {
-      final page = await ref
-          .read(apiProvider)
-          .notes(widget.animalId, cursor: _cursor);
-      if (!mounted) return;
-      setState(() {
-        _notes.addAll(page.data);
-        _cursor = page.nextCursor;
-        _hasMore = page.nextCursor != null;
-        _error = null;
-      });
+      await ref.read(syncServiceProvider).drain();
+      await ref.read(herdRepositoryProvider).refreshNotes(widget.animalId);
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _firstLoad = false;
-        });
-      }
+      if (!mounted || silent) return;
+      final t = L10n.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.isOffline ? t.showingSavedData : errorText(t, e)),
+      ));
     }
-  }
-
-  Future<void> _refresh() async {
-    setState(() {
-      _notes.clear();
-      _cursor = null;
-      _hasMore = true;
-      _firstLoad = true;
-    });
-    await _loadMore();
   }
 
   Future<void> _addNote() async {
-    final note = await showAddNoteSheet(context, animalId: widget.animalId);
-    if (note != null && mounted) setState(() => _notes.insert(0, note));
+    final saved = await showAddNoteSheet(context, animalLocalId: widget.animalId);
+    if (saved == true && mounted) {
+      final t = L10n.of(context);
+      final queued = ref.read(pendingWritesProvider).value ?? 0;
+      if (queued > 0) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(t.offlineSavedLocally)));
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final t = L10n.of(context);
+    final animal = ref.watch(_animalProvider(widget.animalId)).value ?? widget.initial;
+    final notes = ref.watch(_notesProvider(widget.animalId));
+
     return Scaffold(
-      appBar: AppBar(title: Text(_animal?.barcode ?? t.tileHerd)),
+      appBar: AppBar(title: Text(animal?.barcode ?? t.tileHerd)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addNote,
         icon: const Icon(Icons.add),
         label: Text(t.addNote),
       ),
-      body: SafeArea(child: _body(t)),
-    );
-  }
-
-  Widget _body(L10n t) {
-    if (_firstLoad && _loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_firstLoad && _error != null) {
-      return ErrorRetry(message: errorText(t, _error!), onRetry: _refresh);
-    }
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: _notes.isEmpty
-          ? EmptyState(message: t.notesEmpty, icon: Icons.note_outlined)
-          : ListView.separated(
-              controller: _scroll,
-              padding: const EdgeInsets.only(bottom: 96),
-              itemCount: _notes.length + (_hasMore ? 1 : 0),
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, i) {
-                if (i >= _notes.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(AppTokens.s16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return _NoteTile(note: _notes[i]);
-              },
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SyncBanner(),
+            Expanded(
+              child: notes.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) =>
+                    ErrorRetry(message: t.errGeneric, onRetry: _refresh),
+                data: (rows) => RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: rows.isEmpty
+                      ? EmptyState(message: t.notesEmpty, icon: Icons.note_outlined)
+                      : ListView.separated(
+                          padding: const EdgeInsets.only(bottom: 96),
+                          itemCount: rows.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, i) => _NoteTile(note: rows[i]),
+                        ),
+                ),
+              ),
             ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -155,22 +117,21 @@ class _NoteTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = L10n.of(context);
-    final isDoctor = note.isDoctor;
     final date = DateFormat.yMMMd(Localizations.localeOf(context).languageCode)
         .add_jm()
         .format(note.createdAt.toLocal());
-    // Whoever wrote it: a doctor's note is badged; the stamped author label shows.
     final author = note.authorLabel.isNotEmpty ? note.authorLabel : null;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s16, vertical: AppTokens.s8),
       title: Row(
         children: [
-          if (isDoctor) ...[
+          if (note.isDoctor) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: AppTokens.warning.withOpacity(0.12),
+                color: AppTokens.warning.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(AppTokens.rControl),
               ),
               child: Text(t.doctorBadge,
@@ -187,6 +148,12 @@ class _NoteTile extends StatelessWidget {
               style: const TextStyle(fontSize: 12, color: AppTokens.textSecondary),
             ),
           ),
+          if (note.pending) ...[
+            const SizedBox(width: AppTokens.s4),
+            Icon(Icons.cloud_upload_outlined,
+                size: 14, color: AppTokens.textSecondary,
+                semanticLabel: t.notSentYet),
+          ],
         ],
       ),
       subtitle: Padding(
@@ -196,4 +163,3 @@ class _NoteTile extends StatelessWidget {
     );
   }
 }
-

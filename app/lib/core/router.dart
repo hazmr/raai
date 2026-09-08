@@ -64,6 +64,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/animals/new',
         builder: (_, state) => AddAnimalScreen(initialBarcode: state.extra as String?),
       ),
+      // `:id` is the animal's local id, so a tag registered offline (which has
+      // no server id yet) is addressable like any other.
       GoRoute(
         path: '/animals/:id',
         builder: (_, state) => AnimalDetailScreen(

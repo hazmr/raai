@@ -1,7 +1,6 @@
 {
   "@@locale": "en",
   "appTitle": "Raai",
-
   "login": "Log in",
   "register": "Create account",
   "phoneNumber": "Phone number",
@@ -13,7 +12,6 @@
   "createAccount": "Create account",
   "needAccount": "New here? Create an account",
   "haveAccount": "Already have an account? Log in",
-
   "homeGreeting": "Welcome",
   "tileHerd": "Herd",
   "tileScan": "Scan tag",
@@ -21,14 +19,24 @@
   "tileOpenVisits": "Open visits",
   "tileSubscription": "Subscription",
   "herdCount": "{count} head",
-  "@herdCount": { "placeholders": { "count": { "type": "int" } } },
-
+  "@herdCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "subscriptionActive": "Subscription active",
   "subscriptionExpiring": "Expiring soon",
   "subscriptionLapsed": "Subscription needed",
   "renewsOn": "Renews {date}",
-  "@renewsOn": { "placeholders": { "date": { "type": "String" } } },
-
+  "@renewsOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "logout": "Log out",
   "retry": "Retry",
   "cancel": "Cancel",
@@ -36,14 +44,18 @@
   "search": "Search",
   "loading": "Loading…",
   "close": "Close",
-
   "searchByTag": "Search by ear tag",
   "herdEmpty": "No animals yet",
   "addAnimal": "Add animal",
   "barcode": "Ear-tag number",
   "noteCountLabel": "{count} notes",
-  "@noteCountLabel": { "placeholders": { "count": { "type": "int" } } },
-
+  "@noteCountLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "notesTitle": "History",
   "notesEmpty": "No notes yet",
   "addNote": "Add note",
@@ -54,7 +66,6 @@
   "tplCheckup": "Checkup",
   "tplTreatment": "Treatment",
   "tplBirth": "Birth",
-
   "scanManualTitle": "Enter ear-tag number",
   "scanLookup": "Look up",
   "animalNotFoundAdd": "Tag not found. Add this animal?",
@@ -66,7 +77,6 @@
   "scanCheckNumber": "Check it matches the number printed on the tag",
   "open": "Open",
   "rescan": "Rescan",
-
   "visitsTitle": "Visits",
   "locationType": "Location",
   "locClinic": "Clinic",
@@ -80,7 +90,6 @@
   "visitOpen": "Open",
   "visitClosed": "Closed",
   "visitAnimals": "Visit animals",
-
   "farmName": "Farm name",
   "enterAsDoctor": "Enter as a doctor (scan visit QR)",
   "doctorScanTitle": "Scan the visit QR",
@@ -102,15 +111,26 @@
   "invitesEmpty": "No doctor visits yet",
   "doctorBadge": "Doctor",
   "notesWritten": "{count} notes",
-  "@notesWritten": { "placeholders": { "count": { "type": "int" } } },
+  "@notesWritten": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "confirmRemove": "Remove this farmer?",
   "confirmEnd": "End this doctor's access?",
-
   "choosePlan": "Choose a plan",
   "planMonthly": "Monthly",
   "planYearly": "Yearly",
   "amountEgp": "{amount} EGP",
-  "@amountEgp": { "placeholders": { "amount": { "type": "int" } } },
+  "@amountEgp": {
+    "placeholders": {
+      "amount": {
+        "type": "int"
+      }
+    }
+  },
   "payToLabel": "Send to",
   "copy": "Copy",
   "copied": "Copied",
@@ -120,7 +140,6 @@
   "submitPayment": "Submit for review",
   "underReview": "Under review",
   "underReviewBody": "Your subscription activates once the transfer is confirmed",
-
   "errOffline": "No connection — try again",
   "errSessionExpired": "Your session ended — please log in again",
   "errForbidden": "You don't have access to this",
@@ -132,7 +151,39 @@
   "errValidation": "Please check the details",
   "errRateLimited": "Too many tries — wait a moment",
   "errGeneric": "Something went wrong — try later",
-
   "fieldRequired": "Required",
-  "passwordTooShort": "At least 6 characters"
+  "passwordTooShort": "At least 6 characters",
+  "offlineSavedLocally": "Saved on this phone — it will send when you're back online",
+  "pendingWrites": "{count, plural, =1{1 change waiting to send} other{{count} changes waiting to send}}",
+  "@pendingWrites": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "failedWrites": "{count, plural, =1{1 change couldn't be sent} other{{count} changes couldn't be sent}}",
+  "@failedWrites": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notSentYet": "Not sent yet",
+  "syncNow": "Send now",
+  "syncedCount": "{count, plural, =1{1 change sent} other{{count} changes sent}}",
+  "@syncedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showingSavedData": "Showing saved data — no connection",
+  "voiceNote": "Speak",
+  "voiceListening": "Listening…",
+  "voiceUnavailable": "Voice input isn't available on this phone",
+  "voicePermissionDenied": "Microphone permission is needed for voice notes",
+  "stop": "Stop"
 }

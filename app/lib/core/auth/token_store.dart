@@ -17,6 +17,7 @@ class TokenStore {
   static const _kFarmName = 'farm_name';
   static const _kInviteToken = 'invite_token';
   static const _kDoctorLabel = 'doctor_label';
+  static const _kPhone = 'phone_number';
 
   Future<String?> readAccess() => _storage.read(key: _kAccess);
   Future<String?> readRefresh() => _storage.read(key: _kRefresh);
@@ -25,18 +26,21 @@ class TokenStore {
   Future<String?> readFarmName() => _storage.read(key: _kFarmName);
   Future<String?> readInviteToken() => _storage.read(key: _kInviteToken);
   Future<String?> readDoctorLabel() => _storage.read(key: _kDoctorLabel);
+  Future<String?> readPhone() => _storage.read(key: _kPhone);
 
   Future<void> saveUser({
     required String access,
     required String refresh,
     String? farmRole,
     String? farmName,
+    String? phone,
   }) async {
     await _storage.write(key: _kAccess, value: access);
     await _storage.write(key: _kRefresh, value: refresh);
     await _storage.write(key: _kKind, value: 'user');
     if (farmRole != null) await _storage.write(key: _kFarmRole, value: farmRole);
     if (farmName != null) await _storage.write(key: _kFarmName, value: farmName);
+    if (phone != null) await _storage.write(key: _kPhone, value: phone);
   }
 
   Future<void> saveDoctor({
@@ -62,7 +66,7 @@ class TokenStore {
   }
 
   Future<void> clear() async {
-    for (final k in [_kAccess, _kRefresh, _kKind, _kFarmRole, _kFarmName, _kInviteToken, _kDoctorLabel]) {
+    for (final k in [_kAccess, _kRefresh, _kKind, _kFarmRole, _kFarmName, _kInviteToken, _kDoctorLabel, _kPhone]) {
       await _storage.delete(key: k);
     }
   }

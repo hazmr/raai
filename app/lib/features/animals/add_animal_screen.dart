@@ -1,17 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:uuid/uuid.dart';
 
-import '../../core/api/api_exception.dart';
-import '../../core/api/error_text.dart';
-import '../../core/auth/session.dart';
+import '../../core/sync/providers.dart';
 import '../../core/theme.dart';
 import '../../l10n/app_localizations.dart';
 
-/// Add an animal (§5.3): one field (ear-tag barcode) → `POST /animals`.
-/// `409` ("tag already registered") shows inline on the field. Pops `true` on
-/// success so the herd list refreshes. An [initialBarcode] (from Scan) prefills it.
+/// Add an animal (§5.3): one field (ear-tag barcode).
+///
+/// The tag is written to the local database and queued for delivery, so
+/// registering an animal never depends on signal. A tag already in the herd is
+/// reported inline instead of creating a duplicate. An [initialBarcode] (from
+/// Scan) prefills the field.
 class AddAnimalScreen extends ConsumerStatefulWidget {
   const AddAnimalScreen({super.key, this.initialBarcode});
   final String? initialBarcode;
@@ -23,7 +25,6 @@ class AddAnimalScreen extends ConsumerStatefulWidget {
 class _AddAnimalScreenState extends ConsumerState<AddAnimalScreen> {
   late final _barcode = TextEditingController(text: widget.initialBarcode ?? '');
   final _formKey = GlobalKey<FormState>();
-  final _idemKey = const Uuid().v4();
   bool _busy = false;
   String? _barcodeError;
 
@@ -38,20 +39,18 @@ class _AddAnimalScreenState extends ConsumerState<AddAnimalScreen> {
     setState(() => _barcodeError = null);
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
+
+    final barcode = _barcode.text.trim();
+    final repo = ref.read(herdRepositoryProvider);
     try {
-      await ref
-          .read(apiProvider)
-          .createAnimal(_barcode.text.trim(), idempotencyKey: _idemKey);
-      if (mounted) context.pop(true);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      if (e.status == 409) {
-        setState(() =>
-            _barcodeError = errorText(t, e, ctx: ErrorContext.animalTag));
-      } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(errorText(t, e))));
+      if (await repo.findByBarcode(barcode) != null) {
+        if (mounted) setState(() => _barcodeError = t.errTagExists);
+        return;
       }
+      await repo.addAnimal(barcode);
+      // Deliver now if we can; the outbox holds it if we can't.
+      unawaited(ref.read(syncServiceProvider).drain());
+      if (mounted) context.pop(true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

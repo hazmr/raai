@@ -65,6 +65,16 @@ type FarmMember struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type IdempotencyKey struct {
+	FarmID       int32
+	Key          string
+	RequestHash  string
+	StatusCode   *int32
+	ResponseBody []byte
+	CreatedAt    pgtype.Timestamptz
+	CompletedAt  pgtype.Timestamptz
+}
+
 type Payment struct {
 	ID            int32
 	Plan          string

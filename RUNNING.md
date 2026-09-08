@@ -37,11 +37,12 @@ Output: `app/build/app/outputs/flutter-apk/app-release.apk`.
 ## 1. Backend (`server/`)
 
 ### Prerequisites
-- **Docker** with the Compose plugin (this is all you need — no Go required).
+- **Docker** with the Compose plugin (this is all you need to *run* it — no Go required).
   ```bash
   docker --version
   docker compose version
   ```
+- **Go 1.26+** only if you want to build natively or run the test suite (below).
 
 ### One-time configuration
 ```bash
@@ -74,17 +75,18 @@ docker compose ps                                   # api + db should be Up
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/healthz   # 200
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/readyz    # 200 (DB reachable)
 ```
-Quick auth smoke test (registration is **farmer-only**; a vet role is rejected):
+Quick auth smoke test. Registering always creates a **farm** with the new user as its
+admin; doctors never register (they redeem a QR invite instead):
 ```bash
-# Register a farmer → 201 with tokens
+# Register a farm admin → 201 with tokens
 curl -s -X POST http://localhost:8080/api/v1/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"phoneNumber":"01000000001","password":"secret123"}'
+  -d '{"phoneNumber":"01000000001","password":"secret123","farmName":"مزرعة النور"}'
 
-# Trying to register a vet → 422 "vets cannot self-register"
+# A password under 6 characters → 422 with per-field messages
 curl -s -X POST http://localhost:8080/api/v1/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"phoneNumber":"01000000009","password":"x","role":"vet"}'
+  -d '{"phoneNumber":"01000000009","password":"x"}'
 ```
 
 ### URLs
@@ -106,8 +108,26 @@ docker compose down                 # stop (keeps the database volume)
 docker compose down -v              # stop AND wipe the database (fresh start)
 ```
 
+### Run the tests
+Unit tests (JWT, bcrypt, pagination, the error envelope, the rate limiter, config) need
+nothing but Go:
+```bash
+cd server
+make test            # go test ./...
+```
+The integration tests drive the **real HTTP handler against a real Postgres** and skip
+themselves unless `TEST_DATABASE_URL` names a database they may wipe:
+```bash
+docker compose up -d db
+docker compose exec -T db psql -U raai -c 'CREATE DATABASE raai_test'   # once
+make test-integration
+```
+They cover farm isolation, the paywall gate, author-only note editing, doctor-invite
+redemption and revocation, `Idempotency-Key` replay, and the money path (submit →
+confirm → period extended → audited).
+
 ### Optional: run the backend without Docker (native Go)
-Needs Go 1.22+ and a local Postgres. From `server/` (`make` loads `.env`):
+Needs Go 1.26+ and a local Postgres. From `server/` (`make` loads `.env`):
 ```bash
 make migrate-up      # build + run migrations
 make run             # build + ./bin/api serve   (listens on $ADDR, default :8080)
@@ -121,8 +141,11 @@ Point `DB_CONNECTION_STRING` in `.env` at your local Postgres (e.g.
 ## 2. Flutter app (`app/`)
 
 ### Prerequisites
-- **Flutter** (stable) and an **Android device or emulator** — this is an Android-first
-  app. Check your setup:
+- **Flutter 3.47+** (stable) and an **Android device or emulator** — this is an
+  Android-first app.
+- **JDK 17–24** for the Gradle build (Gradle 8.14 does not run on JDK 25). Android
+  Studio's bundled JDK 21 is the easy answer; point Flutter at it once with
+  `flutter config --jdk-dir=<path>` if your system default is newer.
   ```bash
   flutter doctor
   flutter devices
@@ -182,7 +205,14 @@ flutter build apk --release \
 ### Checks (no device needed)
 ```bash
 flutter analyze     # static analysis — should be clean
-flutter test        # boot smoke test
+flutter test        # offline engine (repository + outbox) and the boot smoke test
+```
+
+The offline tests run against a real in-memory SQLite, so they need no device and no
+backend. If you change the drift tables in `lib/core/db/app_database.dart`, regenerate
+the database code:
+```bash
+dart run build_runner build --delete-conflicting-outputs
 ```
 
 ---
@@ -198,20 +228,32 @@ flutter test        # boot smoke test
 6. In the browser, open `http://localhost:8080/admin` (as an admin), find the pending
    payment, and **Confirm** it → the app's paywall lifts on the next status poll.
 
-> **Vet accounts** are provisioned by an admin (not through sign-up). A farmer opens a
-> **visit** with the vet's phone to grant time-boxed write access to their herd.
+> **Doctors never sign up.** The farm admin creates an invite (Doctors tile → new
+> doctor visit), the app shows it as a **QR code**, and the vet scans it from the app's
+> `/doctor` entry screen to get a session scoped to that farm. "End access" revokes it
+> on their next request; the notes they wrote stay in the animal's history.
+
+### Try it offline
+
+1. With the app open on the herd, turn on **airplane mode**.
+2. Scan or add an ear tag, then open it and write a note — both save instantly and show
+   **"not sent yet"**, and a banner reports how many changes are waiting.
+3. Turn airplane mode off. The queue drains on its own (or tap **Send now**), the marks
+   clear, and the notes pick up the server's authorship.
 
 ---
 
 ## Notes & current limitations
 
-- **Camera QR/barcode scanning** is wired (`mobile_scanner 3.5.x`, Kotlin bumped to
-  1.8.22). The Scan screen reads an ear-tag QR — the QR payload is the plain tag number
-  produced by `qr_grid.py` — and runs lookup-or-create; a keyboard button still allows
-  manual entry. Grant the camera permission on first use.
-- **Voice notes** (`speech_to_text`) and **offline outbox/sync** (drift/sqlite) are not
-  wired yet (deferred in `app/pubspec.yaml` pending the AGP 7→8 bump); screens are
-  online-first.
+- **Camera QR/barcode scanning** is wired (`mobile_scanner 7.x`). The Scan screen reads
+  an ear-tag QR — the payload is the plain tag number produced by `qr_grid.py` — and
+  runs lookup-or-create against the **local cache**, so it works with no signal. A
+  keyboard button still allows manual entry. Grant the camera permission on first use.
+- **Voice notes** (`speech_to_text`) are wired into the add-note sheet; the mic button
+  dictates into the field (Arabic first). Grant the microphone permission on first use.
+- **Offline capture** (drift/SQLite + outbox) is wired: the herd, its notes and the
+  pending-write queue live on the phone, and queued writes replay with an
+  `Idempotency-Key` so a retry can't double-create. See `FLUTTER_APP_DESIGN.md` §7.
 - The app targets **Android**; desktop/iOS targets aren't set up.
 
 ### Printing ear-tag QR sheets (`qr_grid.py`)

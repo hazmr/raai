@@ -75,39 +75,66 @@ class Page<T> {
 }
 
 class Animal {
-  Animal({required this.id, required this.barcode, required this.noteCount});
-  final int id;
+  const Animal({
+    required this.localId,
+    required this.barcode,
+    required this.noteCount,
+    this.serverId,
+    this.pending = false,
+  });
+
+  /// Stable local key. The app navigates by this, so an ear tag registered with
+  /// no signal is reachable exactly like a synced one.
+  final int localId;
   final String barcode;
   final int noteCount;
 
+  /// Null until the outbox has delivered this animal to the server.
+  final int? serverId;
+
+  /// True while the animal is still waiting in the outbox.
+  final bool pending;
+
   factory Animal.fromJson(Map<String, dynamic> j) => Animal(
-        id: j['id'] as int,
+        localId: 0, // filled in by the repository when the row is cached
+        serverId: j['id'] as int,
         barcode: j['barcode'] as String,
         noteCount: (j['noteCount'] as int?) ?? 0,
       );
 }
 
 class Note {
-  Note({
-    required this.id,
-    required this.animalId,
+  const Note({
+    required this.localId,
+    required this.animalLocalId,
     required this.body,
     required this.authorKind,
     required this.authorLabel,
     required this.createdAt,
+    this.serverId,
+    this.pending = false,
   });
-  final int id;
-  final int animalId;
+
+  final int localId;
+  final int animalLocalId;
   final String body;
   final String authorKind; // member | doctor
   final String authorLabel; // display name stamped at write time
   final DateTime createdAt;
 
+  /// Null until the outbox has delivered this note to the server.
+  final int? serverId;
+
+  /// True while the note is still waiting in the outbox — the timeline shows it
+  /// straight away, marked as not yet sent.
+  final bool pending;
+
   bool get isDoctor => authorKind == 'doctor';
 
   factory Note.fromJson(Map<String, dynamic> j) => Note(
-        id: j['id'] as int,
-        animalId: j['animalId'] as int,
+        localId: 0, // filled in by the repository when the row is cached
+        animalLocalId: 0,
+        serverId: j['id'] as int,
         body: j['body'] as String,
         authorKind: j['authorKind'] as String? ?? 'member',
         authorLabel: j['authorLabel'] as String? ?? '',

@@ -3,4 +3,3 @@ template-arb-file: en.arb
 output-localization-file: app_localizations.dart
 output-class: L10n
 nullable-getter: false
-synthetic-package: false

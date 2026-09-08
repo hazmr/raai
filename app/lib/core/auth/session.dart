@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api.dart';
 import '../api/dio_client.dart';
+import '../sync/providers.dart';
 import 'token_store.dart';
 
 /// --- wiring providers ---
@@ -27,11 +30,19 @@ final paywallProvider = StateProvider<bool>((ref) => false);
 enum SessionStatus { unknown, loggedOut, loggedIn }
 
 class SessionState {
-  const SessionState(this.status, {this.kind, this.farmRole, this.farmName});
+  const SessionState(this.status,
+      {this.kind, this.farmRole, this.farmName, this.label});
   final SessionStatus status;
   final String? kind; // user | doctor
   final String? farmRole; // admin | farmer | doctor
   final String? farmName;
+
+  /// How this caller is named on a note: their phone, or the doctor's label.
+  /// Used to stamp a note written offline; the server's value wins on sync.
+  final String? label;
+
+  /// What the server records as the author kind for this caller.
+  String get authorKind => isDoctor ? 'doctor' : 'member';
 
   bool get isDoctor => kind == 'doctor';
   bool get isAdmin => farmRole == 'admin';
@@ -53,22 +64,32 @@ class SessionController extends Notifier<SessionState> {
       state = const SessionState(SessionStatus.loggedOut);
       return;
     }
+    final kind = await _store.readKind() ?? 'user';
     state = SessionState(
       SessionStatus.loggedIn,
-      kind: await _store.readKind() ?? 'user',
+      kind: kind,
       farmRole: await _store.readFarmRole() ?? 'farmer',
       farmName: await _store.readFarmName(),
+      label: kind == 'doctor'
+          ? await _store.readDoctorLabel()
+          : await _store.readPhone(),
     );
+    _startSync();
   }
 
   Future<void> login(String phone, String password) async {
     final tokens = await _api.login(phone, password);
-    await _store.saveUser(access: tokens.accessToken, refresh: tokens.refreshToken);
+    await _store.saveUser(
+        access: tokens.accessToken, refresh: tokens.refreshToken, phone: phone);
     final me = await _api.me();
     await _store.saveProfile(farmRole: me.farmRole, farmName: me.farm.name);
     _resetPaywall();
     state = SessionState(SessionStatus.loggedIn,
-        kind: 'user', farmRole: me.farmRole, farmName: me.farm.name);
+        kind: 'user',
+        farmRole: me.farmRole,
+        farmName: me.farm.name,
+        label: me.phoneNumber);
+    _startSync();
   }
 
   /// Self-registration creates a farm; the user becomes its admin.
@@ -78,10 +99,12 @@ class SessionController extends Notifier<SessionState> {
         access: tokens.accessToken,
         refresh: tokens.refreshToken,
         farmRole: 'admin',
-        farmName: farmName);
+        farmName: farmName,
+        phone: phone);
     _resetPaywall();
     state = SessionState(SessionStatus.loggedIn,
-        kind: 'user', farmRole: 'admin', farmName: farmName);
+        kind: 'user', farmRole: 'admin', farmName: farmName, label: phone);
+    _startSync();
   }
 
   /// Doctor enters with a scanned QR invite secret — no account.
@@ -95,7 +118,11 @@ class SessionController extends Notifier<SessionState> {
     );
     _resetPaywall();
     state = SessionState(SessionStatus.loggedIn,
-        kind: 'doctor', farmRole: 'doctor', farmName: sess.farm.name);
+        kind: 'doctor',
+        farmRole: 'doctor',
+        farmName: sess.farm.name,
+        label: sess.doctorLabel);
+    _startSync();
   }
 
   Future<void> logout() async {
@@ -105,17 +132,30 @@ class SessionController extends Notifier<SessionState> {
       } catch (_) {/* best-effort */}
     }
     await _store.clear();
+    await _clearLocalData();
     _resetPaywall();
     state = const SessionState(SessionStatus.loggedOut);
   }
 
   Future<void> onExpired() async {
     await _store.clear();
+    await _clearLocalData();
     _resetPaywall();
     state = const SessionState(SessionStatus.loggedOut);
   }
 
   void _resetPaywall() => ref.read(paywallProvider.notifier).state = false;
+
+  /// Begins replaying anything the outbox still holds for this session.
+  void _startSync() {
+    unawaited(ref.read(syncServiceProvider).start());
+  }
+
+  /// Drops the cached herd so the next sign-in on a shared phone starts clean.
+  Future<void> _clearLocalData() async {
+    ref.read(syncServiceProvider).dispose();
+    await ref.read(appDatabaseProvider).clearAll();
+  }
 }
 
 final sessionControllerProvider =

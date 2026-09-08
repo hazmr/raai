@@ -1,4 +1,4 @@
-.PHONY: build run sqlc migrate-up migrate-down migrate-version test vet fmt tidy docker
+.PHONY: build run sqlc migrate-up migrate-down migrate-version test test-integration vet fmt tidy docker
 
 # Load .env for local targets if present.
 ifneq (,$(wildcard .env))
@@ -28,8 +28,15 @@ migrate-version: build
 admin: build
 	./bin/api admin grant $(PHONE)
 
+# Unit tests only: the DB-backed tests skip themselves without TEST_DATABASE_URL.
 test:
 	go test ./...
+
+# Full suite against a real Postgres. Override TEST_DATABASE_URL for your own database;
+# every table in it is truncated between tests.
+TEST_DATABASE_URL ?= postgres://raai:$(or $(DB_PASSWORD),raai)@localhost:5432/raai_test?sslmode=disable
+test-integration:
+	TEST_DATABASE_URL='$(TEST_DATABASE_URL)' go test ./... -count=1
 
 vet:
 	go vet ./...

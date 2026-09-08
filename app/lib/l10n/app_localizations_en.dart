@@ -1,4 +1,8 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
 import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
 
 /// The translations for English (`en`).
 class L10nEn extends L10n {
@@ -158,7 +162,8 @@ class L10nEn extends L10n {
   String get scanHoldSteady => 'Hold steady on the code';
 
   @override
-  String get scanMultiple => 'More than one tag in view — move closer to just one';
+  String get scanMultiple =>
+      'More than one tag in view — move closer to just one';
 
   @override
   String get scanConfirmTitle => 'Confirm this tag';
@@ -170,7 +175,8 @@ class L10nEn extends L10n {
   String get scanNotInHerd => 'Not in your herd';
 
   @override
-  String get scanCheckNumber => 'Check it matches the number printed on the tag';
+  String get scanCheckNumber =>
+      'Check it matches the number printed on the tag';
 
   @override
   String get open => 'Open';
@@ -260,7 +266,8 @@ class L10nEn extends L10n {
   String get inviteShowQr => 'Show this QR to the doctor';
 
   @override
-  String get inviteScanHint => 'The doctor opens the app, taps \"I\'m a doctor\", and scans it';
+  String get inviteScanHint =>
+      'The doctor opens the app, taps \"I\'m a doctor\", and scans it';
 
   @override
   String get endAccess => 'End access';
@@ -312,7 +319,8 @@ class L10nEn extends L10n {
   String get copied => 'Copied';
 
   @override
-  String get paywallStep => 'Send the amount on InstaPay, then paste the reference';
+  String get paywallStep =>
+      'Send the amount on InstaPay, then paste the reference';
 
   @override
   String get referenceLabel => 'Reference number';
@@ -327,7 +335,8 @@ class L10nEn extends L10n {
   String get underReview => 'Under review';
 
   @override
-  String get underReviewBody => 'Your subscription activates once the transfer is confirmed';
+  String get underReviewBody =>
+      'Your subscription activates once the transfer is confirmed';
 
   @override
   String get errOffline => 'No connection — try again';
@@ -367,4 +376,66 @@ class L10nEn extends L10n {
 
   @override
   String get passwordTooShort => 'At least 6 characters';
+
+  @override
+  String get offlineSavedLocally =>
+      'Saved on this phone — it will send when you\'re back online';
+
+  @override
+  String pendingWrites(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes waiting to send',
+      one: '1 change waiting to send',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String failedWrites(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes couldn\'t be sent',
+      one: '1 change couldn\'t be sent',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notSentYet => 'Not sent yet';
+
+  @override
+  String get syncNow => 'Send now';
+
+  @override
+  String syncedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes sent',
+      one: '1 change sent',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get showingSavedData => 'Showing saved data — no connection';
+
+  @override
+  String get voiceNote => 'Speak';
+
+  @override
+  String get voiceListening => 'Listening…';
+
+  @override
+  String get voiceUnavailable => 'Voice input isn\'t available on this phone';
+
+  @override
+  String get voicePermissionDenied =>
+      'Microphone permission is needed for voice notes';
+
+  @override
+  String get stop => 'Stop';
 }

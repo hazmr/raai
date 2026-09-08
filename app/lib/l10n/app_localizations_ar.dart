@@ -1,4 +1,8 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
 import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
 
 /// The translations for Arabic (`ar`).
 class L10nAr extends L10n {
@@ -260,7 +264,8 @@ class L10nAr extends L10n {
   String get inviteShowQr => 'اعرض هذا الرمز للطبيب';
 
   @override
-  String get inviteScanHint => 'يفتح الطبيب التطبيق ويضغط «أنا طبيب» ثم يمسح الرمز';
+  String get inviteScanHint =>
+      'يفتح الطبيب التطبيق ويضغط «أنا طبيب» ثم يمسح الرمز';
 
   @override
   String get endAccess => 'إنهاء الوصول';
@@ -367,4 +372,66 @@ class L10nAr extends L10n {
 
   @override
   String get passwordTooShort => '٦ أحرف على الأقل';
+
+  @override
+  String get offlineSavedLocally =>
+      'تم الحفظ على الهاتف — سيُرسل عند عودة الاتصال';
+
+  @override
+  String pendingWrites(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count تغييرات في انتظار الإرسال',
+      one: 'تغيير واحد في انتظار الإرسال',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String failedWrites(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count تغييرات لم تُرسل',
+      one: 'تغيير واحد لم يُرسل',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notSentYet => 'لم يُرسل بعد';
+
+  @override
+  String get syncNow => 'أرسل الآن';
+
+  @override
+  String syncedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'تم إرسال $count تغييرات',
+      one: 'تم إرسال تغيير واحد',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get showingSavedData => 'عرض البيانات المحفوظة — لا يوجد اتصال';
+
+  @override
+  String get voiceNote => 'تحدث';
+
+  @override
+  String get voiceListening => 'جارٍ الاستماع…';
+
+  @override
+  String get voiceUnavailable => 'الإدخال الصوتي غير متاح على هذا الهاتف';
+
+  @override
+  String get voicePermissionDenied =>
+      'نحتاج إذن الميكروفون لتسجيل الملاحظات صوتياً';
+
+  @override
+  String get stop => 'إيقاف';
 }

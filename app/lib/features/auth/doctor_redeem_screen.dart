@@ -74,7 +74,7 @@ class _DoctorRedeemScreenState extends ConsumerState<DoctorRedeemScreen> {
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
-            errorBuilder: (context, error, child) => Container(
+            errorBuilder: (context, error) => Container(
               color: Colors.black,
               alignment: Alignment.center,
               child: Padding(

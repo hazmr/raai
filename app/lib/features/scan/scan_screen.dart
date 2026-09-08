@@ -3,10 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../../core/api/api_exception.dart';
-import '../../core/api/error_text.dart';
 import '../../core/api/models.dart';
-import '../../core/auth/session.dart';
+import '../../core/sync/providers.dart';
 import '../../core/theme.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -99,31 +97,25 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     if (_streak >= _kConsensusFrames && dwelled) _onStable(raw);
   }
 
-  /// A value has been read consistently. Pause, look it up, and confirm with the
-  /// user before doing anything.
+  /// A value has been read consistently. Pause, look it up **in the local cache**
+  /// (scanning has to work in a barn with no signal), and confirm with the user
+  /// before doing anything.
   Future<void> _onStable(String code) async {
-    final t = L10n.of(context);
     setState(() => _busy = true);
     await _controller.stop();
     try {
-      final page = await ref.read(apiProvider).animals(barcode: code);
+      final existing = await ref.read(herdRepositoryProvider).findByBarcode(code);
       if (!mounted) return;
-      final existing = page.data.isEmpty ? null : page.data.first;
       final action = await _confirm(code, existing);
       if (!mounted) return;
       switch (action) {
         case _ScanAction.open:
-          await context.push('/animals/${existing!.id}', extra: existing);
+          await context.push('/animals/${existing!.localId}', extra: existing);
         case _ScanAction.add:
           await context.push<bool>('/animals/new', extra: code);
         case _ScanAction.rescan:
         case null:
           break; // just resume scanning
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(errorText(t, e))));
       }
     } finally {
       if (mounted) {
@@ -261,7 +253,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
-            errorBuilder: (context, error, child) => _CameraError(onManual: _manualEntry),
+            errorBuilder: (context, error) => _CameraError(onManual: _manualEntry),
           ),
           IgnorePointer(
             child: Center(

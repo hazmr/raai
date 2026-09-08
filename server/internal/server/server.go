@@ -16,6 +16,7 @@ import (
 	"raai/internal/config"
 	"raai/internal/db/sqlc"
 	"raai/internal/httpx"
+	"raai/internal/idempotency"
 	"raai/internal/invites"
 	"raai/internal/members"
 	mw "raai/internal/middleware"
@@ -54,6 +55,9 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*App, error) {
 	})
 	billingH := billing.NewHandler(billingSvc)
 	gate := billing.NewGate(q)
+
+	// Replays stored responses when the app re-sends an outbox item (§6.1).
+	idem := idempotency.New(q)
 
 	adminSvc := admin.NewService(pool, q)
 	adminJSON := admin.NewJSONHandler(adminSvc)
@@ -96,6 +100,9 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*App, error) {
 		// Authenticated, NOT behind the paywall (§7.2: auth, me, billing, admin, members).
 		r.Group(func(r chi.Router) {
 			r.Use(authMW.Authenticator)
+			// Creates carrying an Idempotency-Key are replay-safe; everything
+			// else passes straight through.
+			r.Use(idem.Handler)
 			r.Post("/auth/logout", authH.Logout)
 			r.Get("/me", authH.Me)
 			r.Route("/billing", billingH.Routes)

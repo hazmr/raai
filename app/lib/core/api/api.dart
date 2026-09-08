@@ -3,9 +3,19 @@ import 'package:dio/dio.dart';
 import 'dio_client.dart';
 import 'models.dart';
 
+/// The slice of the API the offline layer depends on: read the herd, read an
+/// animal's notes, create either. Declaring it separately keeps [HerdRepository]
+/// and [SyncService] testable without a live server.
+abstract interface class HerdApi {
+  Future<Page<Animal>> animals({String? cursor, String? barcode, int limit});
+  Future<Page<Note>> notes(int animalId, {String? cursor, int limit});
+  Future<Animal> createAnimal(String barcode, {String? idempotencyKey});
+  Future<Note> createNote(int animalId, String body, {String? idempotencyKey});
+}
+
 /// Thin typed wrappers over /api/v1. Every method runs through [guardApi] so
 /// failures surface as the single ApiException (§6.1).
-class RaaiApi {
+class RaaiApi implements HerdApi {
   RaaiApi(this._client);
   final DioClient _client;
   Dio get _dio => _client.dio;
@@ -44,6 +54,7 @@ class RaaiApi {
       });
 
   // --- animals ---
+  @override
   Future<Page<Animal>> animals({String? cursor, String? barcode, int limit = 50}) =>
       guardApi(() async {
         final r = await _dio.get('/animals', queryParameters: {
@@ -59,6 +70,7 @@ class RaaiApi {
         return Animal.fromJson(r.data as Map<String, dynamic>);
       });
 
+  @override
   Future<Animal> createAnimal(String barcode, {String? idempotencyKey}) =>
       guardApi(() async {
         final r = await _dio.post('/animals',
@@ -67,6 +79,7 @@ class RaaiApi {
       });
 
   // --- notes ---
+  @override
   Future<Page<Note>> notes(int animalId, {String? cursor, int limit = 50}) =>
       guardApi(() async {
         final r = await _dio.get('/animals/$animalId/notes', queryParameters: {
@@ -77,6 +90,7 @@ class RaaiApi {
       });
 
   // Author (member vs doctor) is set server-side from the token.
+  @override
   Future<Note> createNote(int animalId, String body, {String? idempotencyKey}) =>
       guardApi(() async {
         final r = await _dio.post('/animals/$animalId/notes',

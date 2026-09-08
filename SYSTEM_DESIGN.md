@@ -34,8 +34,8 @@ A spec to rebuild the Raai backend in **Go** with a **redesigned, versioned
 
 - Rebuild in Go for the **lowest production cost** (small memory footprint, scale-to-zero hosts).
 - Ship a **clean, versioned `/api/v1` REST contract** (§6); the Android client updates to match.
-- Support two roles — **farmer** (owns the herd, pays) and **visiting vet** (writes notes
-  inside a farmer-authorized **visit**) — see §4.3.
+- Support a **farm tenant**: an admin who pays, the farmers working with them, and
+  **visiting doctors** who write notes under a revocable invite — see §4.3.
 - Add a **subscription paywall**: the **farmer** pays monthly or yearly **via InstaPay**.
 - Since InstaPay has no merchant API, support a **submit-reference → admin-confirm** flow.
 - Add a small **admin web dashboard** to review/confirm InstaPay payments (see §8).
@@ -97,33 +97,36 @@ raai-go/
 | role                      | text        | `farmer` \| `vet` (default `farmer`) — see §4.3 |
 | created_at                | timestamptz | default `now()`                    |
 
-**animals**
+**animals** (owned by the **farm**, not by one user — see §4.3)
 | column     | type        | notes                                   |
 |------------|-------------|-----------------------------------------|
 | id         | serial PK   |                                         |
 | barcode    | text        | required                                |
-| user_id    | int FK→users| ON DELETE CASCADE                       |
+| farm_id    | int FK→farms| ON DELETE CASCADE                       |
 | created_at | timestamptz | default `now()`                         |
-|            |             | UNIQUE (`barcode`, `user_id`)           |
+| updated_at | timestamptz | default `now()`                         |
+|            |             | UNIQUE (`barcode`, `farm_id`) — the same tag may exist in another farm |
 
 **animal_notes**
-| column     | type           | notes                          |
-|------------|----------------|--------------------------------|
-| id         | serial PK      |                                |
-| animal_id  | int FK→animals | ON DELETE CASCADE              |
-| notes      | text           | required (exposed as `body` in the API, §6.5) |
-| author_id  | int FK→users   | who wrote it (farmer or vet)   |
-| author_role| text           | `farmer` \| `vet` — UI badges vet's medical notes |
-| visit_id   | int FK→visits NULL | the visit it belongs to (null = farmer's own note) |
-| created_at | timestamptz    | default `now()`                |
+| column           | type           | notes                          |
+|------------------|----------------|--------------------------------|
+| id               | serial PK      |                                |
+| animal_id        | int FK→animals | ON DELETE CASCADE              |
+| notes            | text           | required (exposed as `body` in the API, §6.5) |
+| author_kind      | text           | `member` \| `doctor` — UI badges a doctor's note |
+| author_user_id   | int FK→users NULL | set when a farm member wrote it |
+| author_invite_id | int FK→doctor_invites NULL | set when an invited doctor wrote it |
+| author_label     | text           | display name **stamped at write time**, so history survives even if the author row is later removed |
+| created_at       | timestamptz    | default `now()`                |
+| updated_at       | timestamptz    | default `now()`                |
 
 ### 4.2 New tables for subscriptions
 
-**subscriptions** (one active row per user)
+**subscriptions** (one row per **farm** — the farm is what is paid for)
 | column                | type        | notes                                                   |
 |-----------------------|-------------|---------------------------------------------------------|
 | id                    | serial PK   |                                                         |
-| user_id               | int FK→users| UNIQUE                                                  |
+| farm_id               | int FK→farms| UNIQUE                                                  |
 | plan                  | text        | `monthly` \| `yearly`                                   |
 | status                | text        | `pending` \| `active` \| `expired`                      |
 | current_period_end    | timestamptz | access is allowed while `now() < current_period_end`    |
@@ -139,7 +142,8 @@ raai-go/
 | column            | type        | notes                                                       |
 |-------------------|-------------|-------------------------------------------------------------|
 | id                | serial PK   |                                                             |
-| user_id           | int FK→users|                                                             |
+| farm_id           | int FK→farms| the farm this transfer pays for                             |
+| created_by        | int FK→users NULL | the member who submitted the reference                |
 | plan              | text        | `monthly` \| `yearly` the user is paying for                |
 | amount_egp        | numeric     | amount the user claims they sent (EGP)                      |
 | instapay_ref      | text        | UNIQUE — the InstaPay transaction reference (dedupe claims) |
@@ -164,57 +168,80 @@ raai-go/
 | detail      | text NULL   | e.g. "+1 month", reason for rejection                          |
 | created_at  | timestamptz | default `now()`                                                |
 
-### 4.3 Roles & visits (farmer owner + visiting vet)
+### 4.3 Farms, members & doctor invites
 
-Two kinds of human use Raai:
+Raai is **farm-tenanted**: the farm owns the herd, and everyone reaches it through the
+farm. Three kinds of principal:
 
-- **Farmer (owner)** — *buys the subscription*, owns the herd and every record. Full
-  read/write, **always**. Writes whatever notes they like.
-- **Vet (visitor)** — a doctor who checks animals either at a **clinic** (farmer brings
-  the cow) or on the **farm** (vet travels out). Logs into their own account and can
-  **read the farmer's animals and add notes — but only inside a visit the farmer
-  authorized, and only while that visit is `open`**. One vet serves many farmers.
+- **Farm admin** — registers the farm, *buys the subscription*, adds farmers, invites
+  doctors. Full read/write.
+- **Farm member (farmer)** — works the herd: reads and writes animals and notes. No
+  billing, no member management, no invites.
+- **Visiting doctor** — a vet with **no account at all**. The admin creates an invite,
+  the app renders it as a QR code, and the doctor scans it to get a short-lived session
+  scoped to that one farm. Ending the invite revokes access on the doctor's very next
+  request.
 
-A **visit** is one encounter: who (vet), whose herd (farmer), where (clinic *or* farm),
-when. It groups all notes from that encounter, so both sides can later see "everything
-from the June 22 visit" and each animal's full history across visits. Clinic vs farm is
-just a label — the workflow is identical.
+> **Why invites and not vet accounts.** A visiting vet shouldn't need to register, be
+> promoted, or be assigned to a "visit" before they can write a note — in a barn, with
+> the farmer standing there, the admin shows a QR and the vet is in. The invite *is*
+> the grant: it is time-boxed, revocable, and every note it produced stays in the
+> animal's history after it ends.
 
-**visits** (new)
-| column         | type        | notes                                                  |
-|----------------|-------------|--------------------------------------------------------|
-| id             | serial PK   |                                                        |
-| farmer_id      | int FK→users| the owner whose animals are seen                       |
-| vet_id         | int FK→users NULL | the visiting doctor (null = farmer's own session) |
-| location_type  | text        | `clinic` \| `farm`                                     |
-| location_label | text NULL   | optional ("North farm", clinic name)                   |
-| status         | text        | `open` \| `closed`                                     |
-| opened_at      | timestamptz | default `now()`                                        |
-| closed_at      | timestamptz NULL |                                                   |
+**farms**
+| column     | type        | notes                        |
+|------------|-------------|------------------------------|
+| id         | serial PK   |                              |
+| name       | text        | shown in the app's title bar |
+| created_at | timestamptz | default `now()`              |
 
-**Permission rules** (enforced in middleware/handlers, always *also* scoped by ownership):
+**farm_members**
+| column     | type        | notes                                              |
+|------------|-------------|----------------------------------------------------|
+| id         | serial PK   |                                                    |
+| farm_id    | int FK→farms| ON DELETE CASCADE                                  |
+| user_id    | int FK→users| **UNIQUE** — one farm per user                     |
+| role       | text        | `admin` \| `farmer`                                |
+| created_at | timestamptz | default `now()`                                    |
 
-- **Farmer**: full CRUD on their own animals, notes, and visits. Sees every note,
-  including the vet's. Can edit/delete only their **own** notes — not the vet's medical record.
-- **Vet**: while a visit they're assigned to is `open` → may read that farmer's animals,
-  **create** animals (scan a new ear tag), and add notes (`author_role='vet'`,
-  `visit_id` set). May edit/delete only their **own** notes, only while the visit is open.
-  **No access to any other farmer's data.** Once the visit closes → at most read-back of
-  their own past notes.
-- **The visit *is* the grant.** The farmer opening it authorizes the vet; closing it ends
-  write access. There's no permanent "share my herd forever" — it's a time-boxed, audited
-  grant, which matches how a real farm visit works.
+**doctor_invites**
+| column       | type        | notes                                                  |
+|--------------|-------------|--------------------------------------------------------|
+| id           | serial PK   |                                                        |
+| farm_id      | int FK→farms| ON DELETE CASCADE                                      |
+| token        | text        | UNIQUE — the cryptographically random secret in the QR  |
+| doctor_label | text        | the name shown on their notes and in the history        |
+| status       | text        | `active` \| `ended`                                    |
+| expires_at   | timestamptz NULL | null = no expiry, ended manually                   |
+| created_by   | int FK→users NULL |                                                   |
+| created_at   | timestamptz | default `now()`                                        |
+| ended_at     | timestamptz NULL |                                                   |
+| ended_by     | int FK→users NULL |                                                   |
 
-**Billing interaction:** the **farmer pays** — the §7.2 paywall gates the farmer's
-account. A **vet account owns no data, so it's never gated**; but if the farmer's
-subscription is inactive their herd is locked and no visit can run on it. One paying
-farmer therefore covers every vet who visits them.
+**Permission rules** (enforced in middleware + handlers, always *also* scoped by farm):
 
-> **Writing notes in the field** (the "how do they actually type it" worry): keep the
-> note API dead simple (one `body` string) and push the ergonomics to the client —
-> **quick templates** (tap "vaccination / checkup / treatment" → prefilled text),
-> **voice-to-text** dictation, and **offline-first** capture (write in the barn with no
-> signal, sync later — the `Idempotency-Key` on note POST, §6.1, makes resync safe).
+- **Everything is scoped to `farm_id`.** A caller only ever sees their own farm's herd;
+  another farm's animal id returns `404`, never `403` (§6.6).
+- **Farm admin**: everything below, plus members (§6.9), invites (§6.8) and billing (§7.3).
+- **Member**: full CRUD on the farm's animals; may write notes; may edit or delete only
+  **their own** notes.
+- **Doctor**: reads the farm's herd, may **register** a freshly-scanned ear tag, and
+  writes notes stamped `authorKind: "doctor"`. May **not** edit or delete animals
+  (`403`), manage the farm, or touch anyone else's notes.
+- **Authorship is re-checked per request**, not trusted from the token: the auth
+  middleware loads the user's membership (or the invite's `status`/`expires_at`) on
+  every call, so removing a member or ending an invite takes effect immediately.
+
+**Billing interaction:** the paywall (§7.2) keys off the **farm**. If the farm's
+subscription lapses, the herd locks for everyone touching it — members and invited
+doctors alike — while auth, `/me`, billing and member management stay reachable so the
+admin can pay. Redeeming an invite into a lapsed farm returns `402`.
+
+> **Writing notes in the field** (the "how do they actually type it" worry): the note
+> API stays one `body` string and the ergonomics live in the client — **quick
+> templates** (tap "vaccination / checkup / treatment"), **voice dictation**, and an
+> **offline outbox** (write in the barn with no signal, sync later; the
+> `Idempotency-Key` on every queued POST, §6.1, makes the replay safe).
 
 ---
 
@@ -258,8 +285,14 @@ A clean REST surface. Everything lives under **`/api/v1`**. All routes except
   `nextCursor` is `null`/absent on the last page. Query: `?limit=50&cursor=<opaque>`
   (`limit` default 50, max 200).
 - **Partial updates** use `PATCH`; bodies send only changed fields.
-- **Idempotency**: `POST` that creates a resource accepts an optional
-  `Idempotency-Key` header (required for payment submit, §7) so retries don't double-create.
+- **Idempotency**: any authenticated `POST` accepts an optional `Idempotency-Key`
+  header, so the app's offline outbox can replay a queued write without double-creating.
+  The first request stores its response against `(farm, key)`; a replay of the **same**
+  request gets that response back with `Idempotent-Replay: true`. Reusing a key for a
+  *different* body is `409`. Only `2xx` responses are stored — a failed attempt releases
+  the key, so a note POSTed before its animal finished syncing can succeed on retry.
+  Keys are purged after 24h by the hourly sweep. Recommended for every queued write;
+  most valuable on payment submit (§7).
 
 ### 6.2 Auth
 | Method | Path                    | Body                       | Success | Errors |
@@ -303,12 +336,17 @@ A clean REST surface. Everything lives under **`/api/v1`**. All routes except
 | PATCH  | `/api/v1/animals/{animalId}/notes/{id}` | `{body}`    | `200` Note | `404`, `422` |
 | DELETE | `/api/v1/animals/{animalId}/notes/{id}` | —           | `204`   | `404` |
 
-- `Note`: `{id, animalId, body, authorId, authorRole, visitId, createdAt, updatedAt}`.
+- `Note`: `{id, animalId, body, authorKind, authorLabel, inviteId, createdAt, updatedAt}`.
   The text field is renamed `notes` → **`body`** (a note's text isn't "notes").
-  `authorRole` (`farmer`\|`vet`) lets the UI badge a vet's medical note vs the farmer's own.
-- On `POST`, a **vet** must include `visitId` for an open visit they're assigned to (the
-  server checks the visit is open, theirs, and that the animal belongs to that visit's
-  farmer); a **farmer** may omit it. Author fields are set server-side from the token.
+  `authorKind` (`member`\|`doctor`) lets the UI badge a visiting doctor's note;
+  `authorLabel` is the display name stamped when the note was written, so an ended
+  invite or a removed member never blanks out the history. `inviteId` is set only for a
+  doctor's note.
+- **Every author field is set server-side from the token** — the client sends only
+  `{body}`. A doctor's session already names the farm and the invite.
+- Editing and deleting are **author-only**: a member may change their own notes, a
+  doctor their own. Someone else's note answers `404` (§6.6), so the API doesn't confirm
+  what it won't let you touch.
 - Default order: `createdAt` **descending**; cursor-paginated.
 
 ### 6.6 Status codes & error envelope
@@ -336,27 +374,44 @@ The version is in the path (`/api/v1`). Additive changes (new fields, new endpoi
 ship within v1. Anything that breaks a client (removed/renamed field, changed type or
 status) goes in a future `/api/v2`; v1 keeps working until clients migrate.
 
-### 6.8 Visits & vet access (§4.3)
+### 6.8 Doctor invites & access (§4.3)
 
-Farmer endpoints (role `farmer`):
-| Method | Path                          | Body                                          | Success | Errors |
-|--------|-------------------------------|-----------------------------------------------|---------|--------|
-| POST   | `/api/v1/visits`              | `{vetPhone?, locationType, locationLabel?}`   | `201` Visit — opens a visit & authorizes the vet | `404` no such vet, `422` |
-| GET    | `/api/v1/visits`              | —                                             | `200` List<Visit> (own history) | `401` |
-| POST   | `/api/v1/visits/{id}/close`   | —                                             | `200` Visit — ends the vet's write access | `404` |
+Farm-admin endpoints (behind auth + the paywall + `RequireFarmAdmin`):
+| Method | Path                        | Body                            | Success | Errors |
+|--------|-----------------------------|---------------------------------|---------|--------|
+| POST   | `/api/v1/invites`           | `{doctorLabel, expiresAt?}`     | `201` Invite — the response carries the QR `token` | `403`, `422` |
+| GET    | `/api/v1/invites`           | —                               | `200` List<Invite> — the farm's history, with each doctor's `noteCount` | `403` |
+| POST   | `/api/v1/invites/{id}/end`  | —                               | `200` Invite — revokes access immediately | `403`, `404` |
 
-Vet endpoints (role `vet`):
-| Method | Path                                | Body | Success | Errors |
-|--------|-------------------------------------|------|---------|--------|
-| GET    | `/api/v1/visits?status=open`        | —    | `200` List<Visit> — visits the vet is authorized on now | `401` |
-| GET    | `/api/v1/visits/{id}/animals`       | —    | `200` List<Animal> — the farmer's herd, to scan/look up | `403` not assigned / closed |
-| POST   | `/api/v1/animals/{animalId}/notes`  | `{body, visitId}` | `201` Note (see §6.5) | `403`, `404` |
+Doctor entry point (**public** — a doctor has no account):
+| Method | Path                       | Body      | Success | Errors |
+|--------|----------------------------|-----------|---------|--------|
+| POST   | `/api/v1/doctor/redeem`    | `{token}` | `200` DoctorSession | `401` unknown/ended/expired, `402` farm unpaid |
 
-- `Visit`: `{id, farmerId, vetId, locationType, locationLabel, status, openedAt, closedAt}`.
-- The vet writes notes through the **same** notes endpoint (§6.5) with `visitId`; no
-  separate "vet notes" route. Authorization differs by role, not by URL.
-- If `vetPhone` names someone without an account yet, return `404` (invite them to
-  register as a vet first) — keep "promote/assign" explicit, never silent.
+- `Invite`: `{id, doctorLabel, token, status, expiresAt, createdAt, endedAt, noteCount}`.
+- `DoctorSession`: `{accessToken, tokenType, expiresAt, farm: {id, name}, doctorLabel}`.
+- **Redeem doubles as the doctor's refresh.** The app keeps the invite secret and
+  re-redeems it when the short-lived access token expires; once the invite is ended that
+  re-redeem fails, which is how revocation reaches a phone that is already signed in.
+- The doctor writes notes through the **same** notes endpoint (§6.5) — no separate
+  "doctor notes" route. Authorization differs by principal, not by URL.
+- Ending an invite **keeps its notes**; they stay in the animal's history under the
+  `authorLabel` stamped at write time.
+
+### 6.9 Farm members (§4.3)
+
+Farm-admin endpoints, deliberately **outside** the paywall so a lapsed farm can still be
+managed:
+| Method | Path                          | Body                        | Success | Errors |
+|--------|-------------------------------|-----------------------------|---------|--------|
+| GET    | `/api/v1/farm/members`        | —                           | `200` List<Member> | `403` |
+| POST   | `/api/v1/farm/members`        | `{phoneNumber, password}`   | `201` Member — creates the farmer's login | `403`, `409` phone taken, `422` |
+| DELETE | `/api/v1/farm/members/{id}`   | —                           | `204` | `403`, `404` (also when the target is the admin) |
+
+- `Member`: `{userId, phoneNumber, role, createdAt}`.
+- One user belongs to **one** farm (`farm_members.user_id` is UNIQUE), so a phone that
+  already exists anywhere is a `409`.
+- The admin cannot be removed — the farm would be left with no one who can pay.
 
 ---
 
@@ -387,21 +442,21 @@ to the client.
 ### 7.2 The paywall (subscription gate middleware)
 
 After the auth middleware, a **subscription gate** runs on the protected resource
-routes (`/api/v1/animals/**`, notes, visits). It checks the **owning farmer's**
-subscription:
+routes (`/api/v1/animals/**`, notes, invites). It checks the **caller's farm**:
 
 ```
 allowed = now() < current_period_end   (i.e. status='active')
 ```
 
-The gate keys off the **farmer who owns the data**, not the caller: a **vet** is never
-charged (their account owns nothing), but a vet's call is allowed only if the farmer
-whose herd they're visiting is active — so a lapsed farmer locks the herd for everyone.
+The gate keys off the **farm that owns the data**, not the individual caller: a visiting
+doctor is never charged, but their call is allowed only while the farm that invited them
+is paid up — so a lapsed farm locks the herd for everyone touching it.
 
 If not allowed → respond `402` with the standard error envelope (§6.6)
-`{ "error": { "code": "subscription_required", "message": "..." } }`. The Android app
-shows the paywall/pay-by-InstaPay screen on `402`. **Do not** gate `/api/v1/auth/*`,
-`/api/v1/me`, or the billing endpoints (otherwise an unpaid user could never pay).
+`{ "error": { "code": "subscription_required", "message": "..." } }`. The app shows the
+paywall/pay-by-InstaPay screen on `402`. **Do not** gate `/api/v1/auth/*`, `/api/v1/me`,
+the billing endpoints, or `/api/v1/farm/members` (otherwise a lapsed admin could never
+pay or fix their farm).
 
 ### 7.3 New endpoints (under `/api/v1`)
 
@@ -682,31 +737,50 @@ volumes:
 
 ---
 
-## 11. Build order (suggested)
+## 11. Build order — as built
+
+Steps 1–12 below are **done**; the numbering follows the order they were built in.
 
 1. Project skeleton, config, pgx pool, `0001_init.sql` (users/animals/notes).
-2. Auth: bcrypt + JWT issue/verify + middleware. Build `/api/v1/auth/*` + `/api/v1/me`
-   (register, login, refresh, logout — §6.2).
-3. Animals + notes handlers/queries per the redesigned `/api/v1` contract (§6): error
-   envelope, cursor pagination, notes nested under animal id. **Update the Android
-   client to the new contract** and verify end-to-end.
-4. **Roles & visits (§4.3):** `0002_roles_visits.sql` — `users.role`, `visits` table,
-   `animal_notes.author_id/author_role/visit_id`. Visit endpoints (§6.8) + the
-   farmer-vs-vet permission checks; vet writes notes via §6.5 with `visitId`.
-5. `0003_subscriptions.sql` — `subscriptions` + `payments` + `admin_audit` tables +
-   `users.is_admin`. Seed yourself admin (§8.4).
-6. Billing user endpoints: `GET /billing/plans` (IPA + EGP prices),
-   `POST /billing/payments`, `GET /billing/status`, `GET /billing/payments`.
-7. Admin **service** (confirm/reject/grant) + `is_admin` check, extending
-   `current_period_end` in one tx and writing `admin_audit`.
+2. Auth: bcrypt + JWT issue/verify + middleware, `/api/v1/auth/*` + `/api/v1/me` (§6.2).
+3. Animals + notes handlers/queries per the `/api/v1` contract (§6): error envelope,
+   cursor pagination, notes nested under animal id.
+4. `0002_roles_visits.sql` — the first pass at vet access, later replaced (see step 9).
+5. `0003_subscriptions.sql` — `subscriptions` + `payments` + `admin_audit` + `users.is_admin`.
+6. Billing endpoints: `GET /billing/plans`, `POST /billing/payments`,
+   `GET /billing/status`, `GET /billing/payments`.
+7. Admin **service** (confirm/reject/grant/revoke) + `is_admin`, extending
+   `current_period_end` in one transaction and writing `admin_audit`.
 8. **Admin dashboard** (§8): cookie login, pending-payments queue, confirm/reject,
-   subscribers list, manual grant/revoke. Reuse the step-7 service.
-9. Subscription-gate middleware → `402` on protected routes, keyed off the **owning
-   farmer** (§7.2); add the expiry sweep (cron or on-read).
-10. Containerize (§9): multi-stage non-root Dockerfile, `.dockerignore`, migrations as
-    a one-shot job, Compose for local; deploy to a scale-to-zero host + managed Postgres.
-11. Wire the Android app: farmer paywall on `402` (IPA + amount + reference → poll
-    `/api/v1/billing/status`), plus the vet "open visit → scan → write note" flow.
-12. (Optional) §7.5 bank-notification ingestion to auto-confirm.
-</content>
-</invoke>
+   farms list, manual grant/revoke — same service as step 7.
+9. `0004_farms.sql` + `0005_doctor_invites.sql` — the **farm tenant** model (§4.3):
+   ownership moved from users to farms, `farm_members`, and **doctor invites replacing
+   visits**. Notes now record `author_kind` / `author_label` instead of a visit id.
+10. Subscription-gate middleware → `402` keyed off the **farm** (§7.2), plus the hourly
+    expiry sweep.
+11. Containerized (§9): multi-stage non-root Dockerfile, migrations as a one-shot job,
+    Compose for local.
+12. `0006_idempotency.sql` + the `Idempotency-Key` middleware (§6.1) — the replay
+    guarantee the app's offline outbox depends on.
+
+**Remaining (optional):** §7.5 bank-notification ingestion, to auto-confirm payments
+instead of reviewing each one by hand. Everything else in this document is implemented.
+
+### Test suite
+
+The Go tests split in two. Pure unit tests (JWT, bcrypt, cursor pagination, the error
+envelope, the rate limiter, config) need nothing. The integration tests drive the **real
+HTTP handler against a real Postgres** and skip themselves unless `TEST_DATABASE_URL`
+points at a database they may wipe:
+
+```bash
+docker compose up -d db
+createdb raai_test   # or: psql -c 'CREATE DATABASE raai_test'
+TEST_DATABASE_URL='postgres://raai:raai@localhost:5432/raai_test?sslmode=disable' \
+  go test ./...
+```
+
+They cover the paths worth being sure about: farm isolation, the paywall gate, the
+author-only note rules, doctor-invite redemption and revocation, and the money path
+(submit → confirm → period extended → audited, and the double-confirm that must not buy
+two months).

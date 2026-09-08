@@ -20,35 +20,32 @@ dependencies:
   dio: ^5.5.0
   flutter_secure_storage: ^9.2.2
 
-  # Local cache + offline outbox (drift / SQLite) — DEFERRED with the offline
-  # engine (§7). sqlite3_flutter_libs forces Android compileSdk 35, which needs an
-  # AGP 7→8 bump; re-add these together with that bump when building the outbox.
-  # drift: ^2.18.0
-  # sqlite3_flutter_libs: ^0.5.24
-  # path_provider: ^2.1.3
-  # path: ^1.9.0
-  # connectivity_plus: ^6.0.3  # sync trigger: connectivity regained
+  # Local cache + offline outbox (drift / SQLite) — §7. The herd, its notes and
+  # the pending-write queue live in SQLite so the app works with no signal.
+  drift: ^2.28.2
+  sqlite3_flutter_libs: ^0.5.40
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  connectivity_plus: ^7.0.0  # sync trigger: connectivity regained
 
-  # Ear-tag QR/barcode scanning (§5.4). Pinned to the 3.5.x line: it only needs
-  # compileSdk 34 (works on the stock Flutter 3.22.1 / AGP 7.3.0 toolchain),
-  # whereas mobile_scanner 4.x/5.x require the AGP 7→8 bump.
-  mobile_scanner: ^3.5.7
+  # Ear-tag QR/barcode scanning (§5.4).
+  mobile_scanner: ^7.1.4
   # Render the doctor-invite QR on the admin's screen (pure Dart, no native code).
   qr_flutter: ^4.1.0
-  # Voice notes — re-added in build-order step 7 (needs the AGP bump).
-  # speech_to_text: ^7.0.0
+  # Voice notes (§5.5): dictate into the note field instead of typing.
+  speech_to_text: ^7.3.0
 
   # i18n + small utilities
-  intl: ^0.19.0
+  intl: ^0.20.3
   uuid: ^4.4.0            # idempotency keys (uuid v4)
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
-  # Re-added with drift when the offline engine is built (§7).
-  # drift_dev: ^2.18.0
-  # build_runner: ^2.4.11
+  flutter_lints: ^6.0.0
+  # Generates the drift database code from lib/core/db/*.dart.
+  drift_dev: ^2.28.2
+  build_runner: ^2.9.0
 
 flutter:
   uses-material-design: true

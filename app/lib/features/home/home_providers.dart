@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/models.dart';
 import '../../core/auth/session.dart';
+import '../../core/sync/providers.dart';
 
 /// Current subscription state for the farmer's subscription tile (§5.2).
 final billingStatusProvider = FutureProvider.autoDispose<BillingStatus>((ref) {
@@ -9,14 +10,15 @@ final billingStatusProvider = FutureProvider.autoDispose<BillingStatus>((ref) {
 });
 
 class HerdSummary {
-  const HerdSummary(this.count, this.hasMore);
+  const HerdSummary(this.count);
   final int count;
-  final bool hasMore;
 }
 
-/// A cheap herd summary for the home tile. (A dedicated count endpoint can replace
-/// this later; for now we show the first page's size.)
-final herdSummaryProvider = FutureProvider.autoDispose<HerdSummary>((ref) async {
-  final page = await ref.watch(apiProvider).animals(limit: 50);
-  return HerdSummary(page.data.length, page.nextCursor != null);
+/// The herd size for the home tile, counted in the local cache so the number is
+/// there the moment the app opens — with or without signal.
+final herdSummaryProvider = StreamProvider.autoDispose<HerdSummary>((ref) {
+  return ref
+      .watch(herdRepositoryProvider)
+      .watchAnimals()
+      .map((animals) => HerdSummary(animals.length));
 });
